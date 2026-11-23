@@ -5,6 +5,7 @@ import com.backspace.core.model.ChannelCategory
 import com.backspace.core.model.ChosenUserStatus
 import com.backspace.core.model.DmChannel
 import com.backspace.core.model.DmMessage
+import com.backspace.core.model.IncomingCallEvent
 import com.backspace.core.model.InstanceStreamingLimits
 import com.backspace.core.model.Message
 import com.backspace.core.model.MessageReaction
@@ -65,6 +66,7 @@ data class RealtimeSnapshot(
     val unreadDmCounts: Map<String, Int> = emptyMap(),
     val channelMentionCounts: Map<String, Int> = emptyMap(),
     val queuedMessages: List<QueuedOutgoingMessage> = emptyList(),
+    val incomingCall: IncomingCallEvent? = null,
     val lastError: String? = null,
 ) {
     val totalUnreadDms: Int get() = unreadDmCounts.values.sum()
@@ -535,6 +537,53 @@ class BackspaceWebSocketClient(
             "reaction_added" -> handleReactionAdded(obj)
             "reaction_removed" -> handleReactionRemoved(obj)
             "user_updated" -> handleUserUpdated(obj)
+            "dm_call_incoming" -> handleDmCallIncoming(obj)
+            "dm_call_accepted", "dm_call_rejected", "dm_call_ended" -> {
+                _snapshot.update { it.copy(incomingCall = null) }
+            }
+        }
+    }
+
+    fun sendDmCallAccept(dmChannelId: String?, federatedCallId: String? = null) {
+        sendJson(
+            buildJsonObject {
+                put("type", "dm_call_accept")
+                if (dmChannelId != null) put("dmChannelId", dmChannelId)
+                if (federatedCallId != null) put("federatedCallId", federatedCallId)
+            },
+        )
+        _snapshot.update { it.copy(incomingCall = null) }
+    }
+
+    fun sendDmCallReject(dmChannelId: String?, federatedCallId: String? = null) {
+        sendJson(
+            buildJsonObject {
+                put("type", "dm_call_reject")
+                if (dmChannelId != null) put("dmChannelId", dmChannelId)
+                if (federatedCallId != null) put("federatedCallId", federatedCallId)
+            },
+        )
+        _snapshot.update { it.copy(incomingCall = null) }
+    }
+
+    fun clearIncomingCall() {
+        _snapshot.update { it.copy(incomingCall = null) }
+    }
+
+    private fun handleDmCallIncoming(obj: JsonObject) {
+        val callerId = obj["callerId"]?.jsonPrimitive?.contentOrNull ?: return
+        val callerName = obj["callerName"]?.jsonPrimitive?.contentOrNull ?: "Chamada"
+        val dmChannelId = obj["dmChannelId"]?.jsonPrimitive?.contentOrNull
+        val federatedCallId = obj["federatedCallId"]?.jsonPrimitive?.contentOrNull
+        _snapshot.update {
+            it.copy(
+                incomingCall = IncomingCallEvent(
+                    dmChannelId = dmChannelId,
+                    federatedCallId = federatedCallId,
+                    callerId = callerId,
+                    callerName = callerName,
+                ),
+            )
         }
     }
 

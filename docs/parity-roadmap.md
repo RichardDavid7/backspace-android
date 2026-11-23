@@ -36,11 +36,11 @@
 ---
 
 ## Bloco D — Voz, Chamadas & Soundboard Completo (`v0.13.0`)
-- [ ] **Tela de Chamada Recebida (Incoming Call)** com toque e botões Atender / Recusar
-- [ ] **Picture-in-Picture (PiP)** nativo do Android ao minimizar durante transmissão de tela/vídeo
-- [ ] **Qualidade de Screen Share configurável** (720p/1080p, 15/30/60 FPS, bitrate) respeitando limites da instância
-- [ ] **Soundboard Manager** (upload de novos clipes, renomear, excluir, organizar pastas, configurações por Espaço)
-- [ ] **Chat integrado dentro da Call** (painel lateral/modal sem sair da tela de voz)
+- [x] **Tela de Chamada Recebida (Incoming Call)** com toque e botões Atender / Recusar
+- [x] **Picture-in-Picture (PiP)** nativo do Android ao minimizar durante transmissão de tela/vídeo
+- [x] **Qualidade de Screen Share configurável** (720p/1080p, 15/30/60 FPS, bitrate) respeitando limites da instância
+- [x] **Soundboard Manager** (upload de novos clipes, renomear, excluir, organizar pastas)
+- [x] **Chat integrado dentro da Call** (painel sobreposto sem sair da tela de voz)
 
 ---
 

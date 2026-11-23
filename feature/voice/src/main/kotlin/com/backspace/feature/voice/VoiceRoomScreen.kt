@@ -33,6 +33,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Cameraswitch
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.HeadsetOff
@@ -61,6 +62,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -83,6 +85,7 @@ import com.backspace.core.model.AudioMode
 import com.backspace.core.model.AudioOutputRoute
 import com.backspace.core.model.TransmissionMode
 import com.backspace.core.voice.BackspaceVoiceEngine
+import com.backspace.core.voice.VoiceConnectionStatus
 import com.backspace.core.voice.VoiceParticipantUi
 import com.backspace.core.voice.VoiceVideoTile
 import io.livekit.android.renderer.TextureViewRenderer
@@ -107,6 +110,7 @@ fun VoiceRoomScreen(
     disconnectUserLabel: String,
     canModerateVoice: Boolean = false,
     onOpenSoundboard: (() -> Unit)? = null,
+    chatSheetContent: (@Composable (onClose: () -> Unit) -> Unit)? = null,
     onBack: () -> Unit,
 ) {
     val colors = AetherTheme.colors
@@ -118,6 +122,38 @@ fun VoiceRoomScreen(
     var isLandscapeForced by remember { mutableStateOf(false) }
     var selectedParticipant by remember { mutableStateOf<VoiceParticipantUi?>(null) }
     var showAudioDialog by remember { mutableStateOf(false) }
+    var showChatOverlay by remember { mutableStateOf(false) }
+    var sawActiveCall by remember { mutableStateOf(state.status != VoiceConnectionStatus.IDLE) }
+    var didPopBack by remember { mutableStateOf(false) }
+
+    val safeBack: () -> Unit = {
+        if (!didPopBack) {
+            didPopBack = true
+            onBack()
+        }
+    }
+
+    // Se a call foi encerrada remotamente (ex: entrou pelo PC enquanto a tela estava apagada), fecha a tela sem congelar
+    LaunchedEffect(state.status) {
+        if (state.status == VoiceConnectionStatus.CONNECTING ||
+            state.status == VoiceConnectionStatus.CONNECTED ||
+            state.status == VoiceConnectionStatus.RECONNECTING
+        ) {
+            sawActiveCall = true
+        } else if (state.status == VoiceConnectionStatus.IDLE && sawActiveCall) {
+            safeBack()
+        }
+    }
+
+    if (showChatOverlay && chatSheetContent != null) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = colors.bgBase,
+        ) {
+            chatSheetContent { showChatOverlay = false }
+        }
+        return
+    }
 
     val screenCaptureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
@@ -394,6 +430,15 @@ fun VoiceRoomScreen(
                     }
                 }
                 Row {
+                    if (chatSheetContent != null) {
+                        IconButton(onClick = { showChatOverlay = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Chat,
+                                contentDescription = "Chat",
+                                tint = colors.textSecondary,
+                            )
+                        }
+                    }
                     // Botão rápido de ocultar/mostrar participantes sem vídeo direto no topo!
                     IconButton(
                         onClick = {
@@ -522,7 +567,7 @@ fun VoiceRoomScreen(
                         bg = Color(0xFFD94A5A),
                         onClick = {
                             voiceEngine.leaveChannel()
-                            onBack()
+                            safeBack()
                         },
                     )
                     }

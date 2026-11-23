@@ -36,6 +36,8 @@ class AudioPreferencesStorage(context: Context) {
         idleSuspendEnabled = prefs.getBoolean("idle_suspend", true),
         idleSuspendTimeoutSeconds = prefs.getInt("idle_timeout", 60),
         hideNonVideoParticipants = prefs.getBoolean("hide_non_video", false),
+        screenShareResolution = prefs.getInt("screen_share_res", 720),
+        screenShareFps = prefs.getInt("screen_share_fps", 30),
     )
 
     fun save(p: UserAudioPreferences) {
@@ -58,6 +60,8 @@ class AudioPreferencesStorage(context: Context) {
             .putBoolean("idle_suspend", p.idleSuspendEnabled)
             .putInt("idle_timeout", p.idleSuspendTimeoutSeconds)
             .putBoolean("hide_non_video", p.hideNonVideoParticipants)
+            .putInt("screen_share_res", p.screenShareResolution)
+            .putInt("screen_share_fps", p.screenShareFps)
             .apply()
     }
 

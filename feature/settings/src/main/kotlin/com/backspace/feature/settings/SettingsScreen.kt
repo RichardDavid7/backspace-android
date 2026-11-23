@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -120,23 +121,49 @@ fun SettingsScreen(
             color = colors.textPrimary,
         )
 
-        if (isInstanceAdmin) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Abas por categoria: 0=Conta, 1=Microfone, 2=Áudio, 3=Vídeo, 4=Instância (admin)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            item {
                 FilterChip(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    label = { Text(userTabLabel) },
+                    label = { Text("Conta") },
                 )
+            }
+            item {
                 FilterChip(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    label = { Text(instanceTabLabel) },
+                    label = { Text("Microfone") },
                 )
+            }
+            item {
+                FilterChip(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
+                    label = { Text("Áudio") },
+                )
+            }
+            item {
+                FilterChip(
+                    selected = selectedTab == 3,
+                    onClick = { selectedTab = 3 },
+                    label = { Text("Vídeo") },
+                )
+            }
+            if (isInstanceAdmin) {
+                item {
+                    FilterChip(
+                        selected = selectedTab == 4,
+                        onClick = { selectedTab = 4 },
+                        label = { Text(instanceTabLabel) },
+                    )
+                }
             }
         }
 
-        if (selectedTab == 0 || !isInstanceAdmin) {
-            // ── ABA USUÁRIO: Perfil + Microfone/Transmissão (amigável) + Áudio/Opus + Restaurar ──
+        if (selectedTab == 0) {
+            // ── ABA 0: CONTA & PERFIL ──
             val context = LocalContext.current
             val me = snapshot.currentUser
             var displayName by remember(me?.displayName) { mutableStateOf(me?.displayName.orEmpty()) }
@@ -253,7 +280,16 @@ fun SettingsScreen(
                 )
             }
 
-            // Card separado e amigável: Microfone e Modo de Transmissão
+            AetherPrimaryButton(text = checkUpdatesLabel, onClick = onCheckUpdates)
+
+            OutlinedButton(
+                onClick = onLogout,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(text = logoutLabel, color = colors.accentPeach)
+            }
+        } else if (selectedTab == 1) {
+            // ── ABA 1: MICROFONE E TRANSMISSÃO ──
             AetherSurfaceCard {
                 Text(text = "Microfone e Transmissão", style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
                 Spacer(Modifier.height(4.dp))
@@ -321,7 +357,8 @@ fun SettingsScreen(
                     )
                 }
             }
-
+        } else if (selectedTab == 2) {
+            // ── ABA 2: ÁUDIO & OPUS ──
             AetherSurfaceCard {
                 Text(text = audioHeader, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
                 Spacer(Modifier.height(8.dp))
@@ -446,7 +483,10 @@ fun SettingsScreen(
                     Text("Restaurar padrões de áudio", color = colors.accentAmber)
                 }
             }
-
+        } else if (selectedTab == 3) {
+            // ── ABA 3: VÍDEO & TRANSMISSÃO DE TELA ──
+            val maxRes = snapshot.streamingLimits.maxScreenShareResolution
+            val maxFps = snapshot.streamingLimits.maxScreenShareFps
             AetherSurfaceCard {
                 Text(text = videoHeader, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
                 SettingsToggleRow(
@@ -456,17 +496,40 @@ fun SettingsScreen(
                         voiceEngine.updateUserAudioPreferences { it.copy(hideNonVideoParticipants = v) }
                     },
                 )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Qualidade do compartilhamento de tela (limite da instância: ${maxRes}p @ ${maxFps} FPS):",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                )
+                Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(720, 1080).forEach { res ->
+                        FilterChip(
+                            selected = prefs.screenShareResolution == res,
+                            enabled = res <= maxRes,
+                            onClick = {
+                                voiceEngine.updateUserAudioPreferences { it.copy(screenShareResolution = res) }
+                            },
+                            label = { Text("${res}p") },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(15, 30, 60).forEach { fps ->
+                        FilterChip(
+                            selected = prefs.screenShareFps == fps,
+                            enabled = fps <= maxFps,
+                            onClick = {
+                                voiceEngine.updateUserAudioPreferences { it.copy(screenShareFps = fps) }
+                            },
+                            label = { Text("$fps FPS") },
+                        )
+                    }
+                }
             }
-
-            AetherPrimaryButton(text = checkUpdatesLabel, onClick = onCheckUpdates)
-
-            OutlinedButton(
-                onClick = onLogout,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(text = logoutLabel, color = colors.accentPeach)
-            }
-        } else {
+        } else if (isInstanceAdmin) {
             // ── ABA ADMINISTRAÇÃO COMPLETA DA INSTÂNCIA ──
             val currentAdmin = adminSettings ?: InstanceAdminSettings()
             var instanceName by remember(currentAdmin) { mutableStateOf(currentAdmin.instanceName) }

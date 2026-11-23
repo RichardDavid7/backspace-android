@@ -1,11 +1,14 @@
 package com.backspace.android
 
 import android.Manifest
+import android.app.PictureInPictureParams
 import android.content.Intent
 import android.graphics.Color
+import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.util.Rational
 import android.view.KeyEvent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -20,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
@@ -27,7 +31,9 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -51,6 +57,7 @@ import com.backspace.core.model.PermissionBits
 import com.backspace.core.model.PttHardwareKey
 import com.backspace.core.model.TransmissionMode
 import com.backspace.core.network.StoredSession
+import com.backspace.core.voice.VoiceConnectionStatus
 import com.backspace.feature.auth.AuthScreen
 import com.backspace.feature.chat.ChatChannelScreen
 import com.backspace.feature.dm.DmListScreen
@@ -72,6 +79,21 @@ class MainActivity : ComponentActivity() {
         setContent {
             BackspaceAetherTheme {
                 BackspaceRootApp(container = container)
+            }
+        }
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val voiceState = (application as BackspaceApplication).container.voiceEngine.state.value
+            if (voiceState.status == VoiceConnectionStatus.CONNECTED && voiceState.videoTiles.isNotEmpty()) {
+                runCatching {
+                    val params = PictureInPictureParams.Builder()
+                        .setAspectRatio(Rational(16, 9))
+                        .build()
+                    enterPictureInPictureMode(params)
+                }
             }
         }
     }
@@ -136,6 +158,63 @@ private fun BackspaceRootApp(container: AppContainer) {
 
     val startDestination = if (session != null) "home" else "auth"
     val updateUpToDateText = stringResource(R.string.updater_up_to_date)
+    val rootSnapshot by container.wsClient.snapshot.collectAsStateWithLifecycle()
+    val incomingCall = rootSnapshot.incomingCall
+
+    // Tela de Chamada Recebida (Incoming Call) com toque do sistema
+    if (incomingCall != null && session != null) {
+        val activeSession = session!!
+        DisposableEffect(incomingCall.callerId, incomingCall.dmChannelId) {
+            val ringtone = runCatching {
+                val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+                RingtoneManager.getRingtone(context, uri)?.also { it.play() }
+            }.getOrNull()
+            onDispose {
+                runCatching { ringtone?.stop() }
+            }
+        }
+        AlertDialog(
+            onDismissRequest = {
+                container.wsClient.sendDmCallReject(incomingCall.dmChannelId, incomingCall.federatedCallId)
+            },
+            containerColor = AetherTheme.colors.bgChannel,
+            title = { Text("📞 Chamada recebida", color = AetherTheme.colors.textPrimary) },
+            text = {
+                Text(
+                    text = "${incomingCall.callerName} está te ligando...",
+                    color = AetherTheme.colors.textSecondary,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        container.wsClient.sendDmCallAccept(incomingCall.dmChannelId, incomingCall.federatedCallId)
+                        val dmId = incomingCall.dmChannelId
+                        if (!dmId.isNullOrBlank()) {
+                            container.voiceEngine.joinDmCall(
+                                instanceUrl = activeSession.instanceUrl,
+                                jwtToken = activeSession.token,
+                                dmChannelId = dmId,
+                                dmTitle = incomingCall.callerName,
+                            )
+                            navController.navigate("voice")
+                        }
+                    },
+                ) {
+                    Text("Atender", color = AetherTheme.colors.accentMint)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        container.wsClient.sendDmCallReject(incomingCall.dmChannelId, incomingCall.federatedCallId)
+                    },
+                ) {
+                    Text("Recusar", color = AetherTheme.colors.accentPeach)
+                }
+            },
+        )
+    }
 
     NavHost(navController = navController, startDestination = startDestination) {
         composable("auth") {
@@ -284,7 +363,7 @@ private fun BackspaceRootApp(container: AppContainer) {
                         instanceUrl = active.instanceUrl,
                         jwtToken = active.token,
                         username = currentUserLabel,
-                        appVersion = "0.12.1-alpha",
+                        appVersion = "0.13.0-alpha",
                         restClient = container.restClient,
                         wsClient = container.wsClient,
                         voiceEngine = container.voiceEngine,
@@ -312,7 +391,7 @@ private fun BackspaceRootApp(container: AppContainer) {
                                 val repoSlug = context.getString(R.string.updater_repo_slug)
                                 val result = container.releaseUpdater.checkLatestRelease(
                                     repoSlug = repoSlug,
-                                    currentVersion = "0.12.1-alpha",
+                                    currentVersion = "0.13.0-alpha",
                                 )
                                 if (result != null && result.updateAvailable && result.downloadUrl.isNotBlank()) {
                                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(result.downloadUrl)))
@@ -404,13 +483,23 @@ private fun BackspaceRootApp(container: AppContainer) {
         }
 
         composable("voice") {
-            val activeSpaceId = container.voiceEngine.state.value.spaceId
+            val activeSession = session
+            val voiceStateNow = container.voiceEngine.state.value
+            val activeSpaceId = voiceStateNow.spaceId
+            val activeChannelId = voiceStateNow.channelId
+            val activeChannelName = voiceStateNow.channelName
             val activeSpace = container.wsClient.snapshot.value.spaces.firstOrNull { it.id == activeSpaceId }
             val canMod = activeSpace != null && (
                 PermissionBits.hasPermission(activeSpace.myPermissions, PermissionBits.MUTE_MEMBERS) ||
                     PermissionBits.hasPermission(activeSpace.myPermissions, PermissionBits.DEAFEN_MEMBERS) ||
                     PermissionBits.hasPermission(activeSpace.myPermissions, PermissionBits.DISCONNECT_MEMBERS)
                 )
+            val msgPlaceholder = stringResource(R.string.chat_message_placeholder)
+            val emptyChat = stringResource(R.string.chat_empty)
+            val queuedLbl = stringResource(R.string.chat_queued_offline)
+            val replyPrefix = stringResource(R.string.chat_replying_to)
+            val replyAct = stringResource(R.string.chat_action_reply)
+            val deleteAct = stringResource(R.string.chat_action_delete)
             VoiceRoomScreen(
                 voiceEngine = container.voiceEngine,
                 opusTitle = stringResource(R.string.voice_opus_title),
@@ -430,6 +519,28 @@ private fun BackspaceRootApp(container: AppContainer) {
                 canModerateVoice = canMod,
                 onOpenSoundboard = activeSpaceId?.let { spaceId ->
                     { navController.navigate("soundboard/$spaceId") }
+                },
+                chatSheetContent = if (activeSession != null && !activeChannelId.isNullOrBlank()) {
+                    { onClose ->
+                        ChatChannelScreen(
+                            instanceUrl = activeSession.instanceUrl,
+                            jwtToken = activeSession.token,
+                            channelId = activeChannelId,
+                            channelName = activeChannelName.ifBlank { "Chat" },
+                            restClient = container.restClient,
+                            wsClient = container.wsClient,
+                            messagePlaceholder = msgPlaceholder,
+                            emptyChatText = emptyChat,
+                            queuedLabel = queuedLbl,
+                            replyingToPrefix = replyPrefix,
+                            replyActionLabel = replyAct,
+                            deleteActionLabel = deleteAct,
+                            isDm = activeSpaceId == null,
+                            onBack = onClose,
+                        )
+                    }
+                } else {
+                    null
                 },
                 onBack = { navController.popBackStack() },
             )

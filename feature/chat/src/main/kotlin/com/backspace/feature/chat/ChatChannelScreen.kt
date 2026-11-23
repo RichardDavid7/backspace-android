@@ -17,6 +17,8 @@ import androidx.compose.foundation.content.ReceiveContentListener
 import androidx.compose.foundation.content.consume
 import androidx.compose.foundation.content.contentReceiver
 import androidx.compose.foundation.content.hasMediaType
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -77,8 +79,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -264,12 +269,40 @@ fun ChatChannelScreen(
     // Visualizador de imagem em tela cheia
     if (fullscreenImageUrl != null) {
         val imgUrl = fullscreenImageUrl!!
+        var zoomScale by remember(imgUrl) { mutableStateOf(1f) }
+        var zoomOffset by remember(imgUrl) { mutableStateOf(Offset.Zero) }
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black)
                 .statusBarsPadding()
-                .navigationBarsPadding(),
+                .navigationBarsPadding()
+                .pointerInput(imgUrl) {
+                    detectTapGestures(
+                        onDoubleTap = {
+                            if (zoomScale > 1.1f) {
+                                zoomScale = 1f
+                                zoomOffset = Offset.Zero
+                            } else {
+                                zoomScale = 2.5f
+                            }
+                        },
+                    )
+                }
+                .pointerInput(imgUrl) {
+                    detectTransformGestures { _, pan, zoom, _ ->
+                        val nextScale = (zoomScale * zoom).coerceIn(1f, 5f)
+                        zoomScale = nextScale
+                        zoomOffset = if (nextScale > 1f) {
+                            Offset(
+                                x = (zoomOffset.x + pan.x).coerceIn(-1200f, 1200f),
+                                y = (zoomOffset.y + pan.y).coerceIn(-1200f, 1200f),
+                            )
+                        } else {
+                            Offset.Zero
+                        }
+                    }
+                },
         ) {
             AsyncImage(
                 model = ImageRequest.Builder(context)
@@ -279,7 +312,14 @@ fun ChatChannelScreen(
                     .build(),
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer(
+                        scaleX = zoomScale,
+                        scaleY = zoomScale,
+                        translationX = zoomOffset.x,
+                        translationY = zoomOffset.y,
+                    ),
             )
             Row(
                 modifier = Modifier

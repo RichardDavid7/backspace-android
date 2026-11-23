@@ -226,6 +226,15 @@ data class UserAudioPreferences(
     val idleSuspendEnabled: Boolean = true,
     val idleSuspendTimeoutSeconds: Int = 60,
     val hideNonVideoParticipants: Boolean = false,
+    val screenShareResolution: Int = 720, // 720 ou 1080
+    val screenShareFps: Int = 30, // 15, 30 ou 60
+)
+
+data class IncomingCallEvent(
+    val dmChannelId: String?,
+    val federatedCallId: String? = null,
+    val callerId: String,
+    val callerName: String,
 )
 
 data class ResolvedAudioPolicy(

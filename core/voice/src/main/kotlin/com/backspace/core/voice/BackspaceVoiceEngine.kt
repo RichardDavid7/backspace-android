@@ -25,12 +25,16 @@ import io.livekit.android.events.collect
 import io.livekit.android.renderer.TextureViewRenderer
 import io.livekit.android.room.Room
 import io.livekit.android.room.participant.AudioTrackPublishDefaults
+import io.livekit.android.room.participant.VideoTrackPublishDefaults
 import io.livekit.android.room.track.DataPublishReliability
 import io.livekit.android.room.track.LocalAudioTrack
 import io.livekit.android.room.track.LocalAudioTrackOptions
 import io.livekit.android.room.track.LocalVideoTrack
+import io.livekit.android.room.track.LocalVideoTrackOptions
 import io.livekit.android.room.track.RemoteAudioTrack
 import io.livekit.android.room.track.Track
+import io.livekit.android.room.track.VideoCaptureParameter
+import io.livekit.android.room.track.VideoEncoding
 import io.livekit.android.room.track.VideoTrack
 import io.livekit.android.room.track.screencapture.ScreenCaptureParams
 import kotlinx.coroutines.CoroutineScope
@@ -44,6 +48,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -316,31 +322,44 @@ class BackspaceVoiceEngine(
     }
 
     fun leaveChannel() {
-        scope.launch {
-            if (_state.value.status == VoiceConnectionStatus.CONNECTED) {
-                uiSounds.play(VoiceUiSound.DISCONNECT, _state.value.userPrefs.uiSoundsEnabled)
-            }
-            cleanupRoomOnly()
-            wsClient.sendVoiceLeave()
-            VoiceForegroundService.stop(appContext)
-            audioRouter.exitVoiceMode()
-            _state.update {
-                it.copy(
-                    status = VoiceConnectionStatus.IDLE,
-                    spaceId = null,
-                    spaceName = "",
-                    channelId = null,
-                    channelName = "",
-                    isIdleSuspended = false,
-                    isPttPressed = false,
-                    micInputLevel = 0f,
-                    isCameraOn = false,
-                    isScreenSharing = false,
-                    participants = emptyList(),
-                    videoTiles = emptyList(),
-                    telemetry = VoiceTelemetry(),
-                    errorMessage = null,
-                )
+        val wasConnected = _state.value.status == VoiceConnectionStatus.CONNECTED
+        val uiSoundsOn = _state.value.userPrefs.uiSoundsEnabled
+        val lkRoomToRelease = detachRoomImmediately()
+
+        // Atualiza o estado da UI para IDLE imediatamente (0ms, sem travar a Main thread)
+        _state.update {
+            it.copy(
+                status = VoiceConnectionStatus.IDLE,
+                spaceId = null,
+                spaceName = "",
+                channelId = null,
+                channelName = "",
+                isIdleSuspended = false,
+                isPttPressed = false,
+                micInputLevel = 0f,
+                isCameraOn = false,
+                isScreenSharing = false,
+                participants = emptyList(),
+                videoTiles = emptyList(),
+                telemetry = VoiceTelemetry(),
+                errorMessage = null,
+            )
+        }
+
+        if (wasConnected) {
+            uiSounds.play(VoiceUiSound.DISCONNECT, uiSoundsOn)
+        }
+        runCatching { wsClient.sendVoiceLeave() }
+        runCatching { VoiceForegroundService.stop(appContext) }
+        runCatching { audioRouter.exitVoiceMode() }
+
+        // Desconecta e libera o Room WebRTC fora da Main thread com timeout de segurança
+        if (lkRoomToRelease != null) {
+            scope.launch(Dispatchers.IO) {
+                withTimeoutOrNull(2500L) {
+                    runCatching { lkRoomToRelease.disconnect() }
+                    runCatching { lkRoomToRelease.release() }
+                }
             }
         }
     }
@@ -664,6 +683,12 @@ class BackspaceVoiceEngine(
     private fun createConfiguredRoom(effective: EffectiveAudioConfig): Room {
         val isMusic = effective.mode == AudioMode.MUSIC
         val prefs = _state.value.userPrefs
+        val limits = wsClient.snapshot.value.streamingLimits
+        val maxHeight = minOf(prefs.screenShareResolution, limits.maxScreenShareResolution).coerceAtLeast(480)
+        val width = if (maxHeight >= 1080) 1920 else 1280
+        val maxFps = minOf(prefs.screenShareFps, limits.maxScreenShareFps).coerceIn(15, 60)
+        val maxVideoBitrate = (limits.maxVideoBitrateKbps.coerceAtLeast(1500)).toLong() * 1000L
+
         val options = RoomOptions(
             adaptiveStream = true,
             dynacast = true,
@@ -676,6 +701,19 @@ class BackspaceVoiceEngine(
                 audioBitrate = effective.maxBitrateBps,
                 dtx = effective.dtx,
                 red = effective.red,
+            ),
+            screenShareTrackCaptureDefaults = LocalVideoTrackOptions(
+                captureParams = VideoCaptureParameter(
+                    width = width,
+                    height = maxHeight,
+                    maxFps = maxFps,
+                ),
+            ),
+            screenShareTrackPublishDefaults = VideoTrackPublishDefaults(
+                videoEncoding = VideoEncoding(
+                    maxBitrate = maxVideoBitrate,
+                    maxFps = maxFps,
+                ),
             ),
         )
         return LiveKit.create(appContext = appContext, options = options)
@@ -780,6 +818,11 @@ class BackspaceVoiceEngine(
             while (isActive) {
                 delay(350L)
                 val lkRoom = room ?: continue
+                // Se o LiveKit desconectou enquanto a tela estava apagada (ex: entrou pelo PC), limpa imediatamente
+                if (lkRoom.state == Room.State.DISCONNECTED && _state.value.status == VoiceConnectionStatus.CONNECTED) {
+                    leaveChannel()
+                    break
+                }
                 val effective = _state.value.effectiveAudio
                 val channelsMode = if (effective.stereo) AudioChannelsMode.STEREO else AudioChannelsMode.MONO
                 val localLevel = if (computeDesiredMicEnabled(_state.value)) {
@@ -986,14 +1029,25 @@ class BackspaceVoiceEngine(
         _state.update { it.copy(lastSoundboardEvent = "${payload.emoji} ${payload.name}") }
     }
 
-    private fun cleanupRoomOnly() {
+    private fun detachRoomImmediately(): Room? {
         soundboardPlayer.stopAll()
+        pttReleaseJob?.cancel()
         roomEventsJob?.cancel()
         policyObserverJob?.cancel()
         idleSuspendJob?.cancel()
         telemetryJob?.cancel()
-        room?.disconnect()
-        room?.release()
+        val old = room
         room = null
+        return old
+    }
+
+    private fun cleanupRoomOnly() {
+        val old = detachRoomImmediately() ?: return
+        scope.launch(Dispatchers.IO) {
+            withTimeoutOrNull(2500L) {
+                runCatching { old.disconnect() }
+                runCatching { old.release() }
+            }
+        }
     }
 }

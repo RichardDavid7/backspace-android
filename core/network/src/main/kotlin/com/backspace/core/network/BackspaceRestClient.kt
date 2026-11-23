@@ -20,6 +20,7 @@ import com.backspace.core.model.Message
 import com.backspace.core.model.MessageAttachment
 import com.backspace.core.model.Role
 import com.backspace.core.model.SoundboardListResponse
+import com.backspace.core.model.SoundboardSound
 import com.backspace.core.model.Space
 import com.backspace.core.model.SpaceBanItem
 import com.backspace.core.model.SpaceInviteResponse
@@ -828,6 +829,80 @@ class BackspaceRestClient(
     ): SoundboardListResponse {
         val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
         return executeGet("$base/api/soundboard?spaceId=$spaceId", token = token)
+    }
+
+    suspend fun uploadSoundboardSound(
+        instanceUrl: String,
+        token: String,
+        spaceId: String,
+        name: String,
+        emoji: String,
+        folder: String?,
+        fileName: String,
+        mimeType: String,
+        bytes: ByteArray,
+    ): SoundboardSound = withContext(Dispatchers.IO) {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val body = okhttp3.MultipartBody.Builder()
+            .setType(okhttp3.MultipartBody.FORM)
+            .addFormDataPart("name", name)
+            .addFormDataPart("emoji", emoji.ifBlank { "🔊" })
+            .addFormDataPart("scopeType", "space")
+            .addFormDataPart("scopeId", spaceId)
+            .apply {
+                if (!folder.isNullOrBlank()) addFormDataPart("folder", folder.trim())
+            }
+            .addFormDataPart(
+                "file",
+                fileName,
+                bytes.toRequestBody(mimeType.toMediaType()),
+            )
+            .build()
+        val req = Request.Builder()
+            .url("$base/api/soundboard")
+            .header("Authorization", "Bearer $token")
+            .post(body)
+            .build()
+        executeAndDecode(req)
+    }
+
+    suspend fun updateSoundboardSound(
+        instanceUrl: String,
+        token: String,
+        soundId: String,
+        name: String,
+        emoji: String,
+        folder: String?,
+    ): SoundboardSound {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val payload = kotlinx.serialization.json.buildJsonObject {
+            put("name", kotlinx.serialization.json.JsonPrimitive(name))
+            put("emoji", kotlinx.serialization.json.JsonPrimitive(emoji.ifBlank { "🔊" }))
+            if (folder.isNullOrBlank()) {
+                put("folder", kotlinx.serialization.json.JsonNull)
+            } else {
+                put("folder", kotlinx.serialization.json.JsonPrimitive(folder.trim()))
+            }
+        }.toString()
+        return executePatch("$base/api/soundboard/$soundId", payload, token = token)
+    }
+
+    suspend fun deleteSoundboardSound(
+        instanceUrl: String,
+        token: String,
+        soundId: String,
+    ) = withContext(Dispatchers.IO) {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val req = Request.Builder()
+            .url("$base/api/soundboard/$soundId")
+            .header("Authorization", "Bearer $token")
+            .delete()
+            .build()
+        okHttpClient.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                throw BackspaceApiException(resp.code, null, "HTTP ${resp.code}")
+            }
+        }
     }
 
     private suspend inline fun <reified T> executePatch(url: String, body: String, token: String?): T =
