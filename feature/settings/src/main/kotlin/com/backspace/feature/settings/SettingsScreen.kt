@@ -237,8 +237,8 @@ fun SettingsScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 AetherAvatar(
-                    label = currentUser?.label ?: "?",
-                    avatarUrl = currentUser?.avatarUrl(instanceUrl),
+                    imageUrl = currentUser?.avatarUrl(instanceUrl),
+                    fallbackLabel = currentUser?.label ?: "?",
                     status = currentUser?.status,
                     size = 48.dp,
                 )
@@ -425,7 +425,7 @@ private fun SettingsMenuGroup(
                     }
                     if (index < items.lastIndex) {
                         HorizontalDivider(
-                            color = colors.borderSubtle,
+                            color = colors.borderSoft,
                             modifier = Modifier.padding(vertical = 2.dp),
                         )
                     }
