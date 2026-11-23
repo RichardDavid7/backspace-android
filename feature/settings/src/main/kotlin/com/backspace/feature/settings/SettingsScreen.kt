@@ -485,8 +485,8 @@ fun SettingsScreen(
             }
         } else if (selectedTab == 3) {
             // ── ABA 3: VÍDEO & TRANSMISSÃO DE TELA ──
-            val maxRes = snapshot.streamingLimits.maxScreenShareResolution
-            val maxFps = snapshot.streamingLimits.maxScreenShareFps
+            val maxRes = snapshot.streamingLimits.maxResolution
+            val maxFps = snapshot.streamingLimits.maxFramerate
             AetherSurfaceCard {
                 Text(text = videoHeader, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
                 SettingsToggleRow(

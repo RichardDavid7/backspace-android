@@ -684,10 +684,10 @@ class BackspaceVoiceEngine(
         val isMusic = effective.mode == AudioMode.MUSIC
         val prefs = _state.value.userPrefs
         val limits = wsClient.snapshot.value.streamingLimits
-        val maxHeight = minOf(prefs.screenShareResolution, limits.maxScreenShareResolution).coerceAtLeast(480)
+        val maxHeight = minOf(prefs.screenShareResolution, limits.maxResolution).coerceAtLeast(480)
         val width = if (maxHeight >= 1080) 1920 else 1280
-        val maxFps = minOf(prefs.screenShareFps, limits.maxScreenShareFps).coerceIn(15, 60)
-        val maxVideoBitrate = (limits.maxVideoBitrateKbps.coerceAtLeast(1500)).toLong() * 1000L
+        val maxFps = minOf(prefs.screenShareFps, limits.maxFramerate).coerceIn(15, 60)
+        val maxVideoBitrate = limits.maxBitrateKbps.coerceIn(500, 10000) * 1000
 
         val options = RoomOptions(
             adaptiveStream = true,
