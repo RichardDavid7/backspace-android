@@ -1,0 +1,19 @@
+<resources>
+    <string name="app_name">Backspace</string>
+    <string name="auth_subtitle">连接到你的 Backspace 实例</string>
+    <string name="auth_instance_url">实例地址</string>
+    <string name="auth_username">用户名</string>
+    <string name="auth_password">密码</string>
+    <string name="auth_connect">连接</string>
+    <string name="spaces_title">空间</string>
+    <string name="spaces_voice_channels">语音频道</string>
+    <string name="spaces_empty">暂无可用空间。</string>
+    <string name="voice_connected_banner">语音已连接</string>
+    <string name="voice_opus_title">Opus 音频</string>
+    <string name="voice_telemetry_title">连接遥测</string>
+    <string name="voice_mode_voice">语音</string>
+    <string name="voice_mode_music">音乐</string>
+    <string name="voice_stereo">立体声</string>
+    <string name="voice_bitrate_auto">自动比特率</string>
+    <string name="voice_idle_suspend">空闲时暂停音频</string>
+</resources>

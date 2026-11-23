@@ -1,0 +1,19 @@
+<resources>
+    <string name="app_name">Backspace</string>
+    <string name="auth_subtitle">Conecte-se à sua instância do Backspace</string>
+    <string name="auth_instance_url">URL da instância</string>
+    <string name="auth_username">Usuário</string>
+    <string name="auth_password">Senha</string>
+    <string name="auth_connect">Conectar</string>
+    <string name="spaces_title">Espaços</string>
+    <string name="spaces_voice_channels">Canais de Voz</string>
+    <string name="spaces_empty">Nenhum Espaço disponível ainda.</string>
+    <string name="voice_connected_banner">Voz conectada</string>
+    <string name="voice_opus_title">Áudio Opus</string>
+    <string name="voice_telemetry_title">Telemetria da Conexão</string>
+    <string name="voice_mode_voice">Voz</string>
+    <string name="voice_mode_music">Música</string>
+    <string name="voice_stereo">Áudio estéreo</string>
+    <string name="voice_bitrate_auto">Bitrate automático</string>
+    <string name="voice_idle_suspend">Suspender áudio ocioso</string>
+</resources>

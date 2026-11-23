@@ -1,0 +1,19 @@
+<resources>
+    <string name="app_name">Backspace</string>
+    <string name="auth_subtitle">Подключитесь к вашему серверу Backspace</string>
+    <string name="auth_instance_url">URL инстанса</string>
+    <string name="auth_username">Имя пользователя</string>
+    <string name="auth_password">Пароль</string>
+    <string name="auth_connect">Подключиться</string>
+    <string name="spaces_title">Пространства</string>
+    <string name="spaces_voice_channels">Голосовые каналы</string>
+    <string name="spaces_empty">Пока нет доступных пространств.</string>
+    <string name="voice_connected_banner">Голос подключён</string>
+    <string name="voice_opus_title">Аудио Opus</string>
+    <string name="voice_telemetry_title">Телеметрия соединения</string>
+    <string name="voice_mode_voice">Голос</string>
+    <string name="voice_mode_music">Музыка</string>
+    <string name="voice_stereo">Стерео звук</string>
+    <string name="voice_bitrate_auto">Авто битрейт</string>
+    <string name="voice_idle_suspend">Приостанавливать неактивный звук</string>
+</resources>
