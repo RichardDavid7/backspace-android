@@ -13,13 +13,27 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.filled.Hub
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavType
@@ -27,6 +41,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.backspace.core.designsystem.AetherTheme
 import com.backspace.core.designsystem.BackspaceAetherTheme
 import com.backspace.core.model.PermissionBits
 import com.backspace.core.network.StoredSession
@@ -63,6 +78,7 @@ private fun BackspaceRootApp(container: AppContainer) {
     val scope = rememberCoroutineScope()
     val navController = rememberNavController()
     var session by remember { mutableStateOf(container.sessionStorage.load()) }
+    var homeTab by rememberSaveable { mutableIntStateOf(0) } // 0 = Espaços, 1 = DMs, 2 = Configurações
 
     val permissionsLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
@@ -89,7 +105,7 @@ private fun BackspaceRootApp(container: AppContainer) {
         }
     }
 
-    val startDestination = if (session != null) "spaces" else "auth"
+    val startDestination = if (session != null) "home" else "auth"
     val updateUpToDateText = stringResource(R.string.updater_up_to_date)
 
     NavHost(navController = navController, startDestination = startDestination) {
@@ -105,83 +121,168 @@ private fun BackspaceRootApp(container: AppContainer) {
                 connectButtonText = stringResource(R.string.auth_connect),
                 onAuthenticated = { url, token ->
                     session = StoredSession(url, token)
-                    navController.navigate("spaces") {
+                    homeTab = 0
+                    navController.navigate("home") {
                         popUpTo("auth") { inclusive = true }
                     }
                 },
             )
         }
 
-        composable("spaces") {
+        composable("home") {
             val active = session ?: return@composable
-            SpacesScreen(
-                instanceUrl = active.instanceUrl,
-                jwtToken = active.token,
-                restClient = container.restClient,
-                wsClient = container.wsClient,
-                voiceEngine = container.voiceEngine,
-                spacesTitle = stringResource(R.string.spaces_title),
-                noSpacesText = stringResource(R.string.spaces_empty),
-                activeVoiceBannerPrefix = stringResource(R.string.voice_connected_banner),
-                statusPickerTitle = stringResource(R.string.status_picker_title),
-                statusOnlineLabel = stringResource(R.string.status_online),
-                statusIdleLabel = stringResource(R.string.status_idle),
-                statusDndLabel = stringResource(R.string.status_dnd),
-                customStatusPlaceholder = stringResource(R.string.status_custom_placeholder),
-                revertTimerLabel = stringResource(R.string.status_revert_timer),
-                membersTitle = stringResource(R.string.spaces_members_title),
-                sendDmLabel = stringResource(R.string.dm_send_message),
-                spaceAdminTitle = stringResource(R.string.space_admin_title),
-                saveLabel = stringResource(R.string.common_save),
-                cancelLabel = stringResource(R.string.common_cancel),
-                onOpenDms = { navController.navigate("dms") },
-                onOpenDirectDm = { dmId, dmTitle ->
-                    val encoded = Uri.encode(dmTitle)
-                    navController.navigate("dm/$dmId/$encoded")
-                },
-                onOpenTextChannel = { channel ->
-                    val encodedName = Uri.encode(channel.name)
-                    navController.navigate("chat/${channel.id}/$encodedName")
-                },
-                onJoinVoiceChannel = { space, category, channel ->
-                    container.voiceEngine.joinChannel(
-                        instanceUrl = active.instanceUrl,
-                        jwtToken = active.token,
-                        space = space,
-                        category = category,
-                        channel = channel,
-                    )
-                    navController.navigate("voice")
-                },
-                onOpenActiveVoice = { navController.navigate("voice") },
-                onOpenSettings = { navController.navigate("settings") },
-            )
-        }
-
-        composable("dms") {
-            val active = session ?: return@composable
+            val colors = AetherTheme.colors
             val myId = container.wsClient.snapshot.value.currentUser?.id
-            DmListScreen(
-                instanceUrl = active.instanceUrl,
-                wsClient = container.wsClient,
-                title = stringResource(R.string.dm_title),
-                emptyText = stringResource(R.string.dm_empty),
-                groupBadge = stringResource(R.string.dm_group_badge),
-                onOpenDm = { dm ->
-                    val encoded = Uri.encode(dm.displayTitle(myId))
-                    navController.navigate("dm/${dm.id}/$encoded")
+            val currentUserLabel = container.wsClient.snapshot.value.currentUser?.label ?: "-"
+
+            Scaffold(
+                containerColor = colors.bgBase,
+                bottomBar = {
+                    NavigationBar(containerColor = colors.bgChannel) {
+                        NavigationBarItem(
+                            selected = homeTab == 0,
+                            onClick = { homeTab = 0 },
+                            icon = { Icon(Icons.Default.Hub, contentDescription = null) },
+                            label = { Text(stringResource(R.string.spaces_title)) },
+                        )
+                        NavigationBarItem(
+                            selected = homeTab == 1,
+                            onClick = { homeTab = 1 },
+                            icon = { Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null) },
+                            label = { Text(stringResource(R.string.dm_tab_label)) },
+                        )
+                        NavigationBarItem(
+                            selected = homeTab == 2,
+                            onClick = { homeTab = 2 },
+                            icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                            label = { Text(stringResource(R.string.settings_title)) },
+                        )
+                    }
                 },
-                onStartDmCall = { dm ->
-                    container.voiceEngine.joinDmCall(
+            ) { innerPadding ->
+                val tabModifier = Modifier
+                    .statusBarsPadding()
+                    .padding(innerPadding)
+
+                when (homeTab) {
+                    0 -> SpacesScreen(
                         instanceUrl = active.instanceUrl,
                         jwtToken = active.token,
-                        dmChannelId = dm.id,
-                        dmTitle = dm.displayTitle(myId),
+                        restClient = container.restClient,
+                        wsClient = container.wsClient,
+                        voiceEngine = container.voiceEngine,
+                        spacesTitle = stringResource(R.string.spaces_title),
+                        noSpacesText = stringResource(R.string.spaces_empty),
+                        activeVoiceBannerPrefix = stringResource(R.string.voice_connected_banner),
+                        statusPickerTitle = stringResource(R.string.status_picker_title),
+                        statusOnlineLabel = stringResource(R.string.status_online),
+                        statusIdleLabel = stringResource(R.string.status_idle),
+                        statusDndLabel = stringResource(R.string.status_dnd),
+                        customStatusPlaceholder = stringResource(R.string.status_custom_placeholder),
+                        revertTimerLabel = stringResource(R.string.status_revert_timer),
+                        membersTitle = stringResource(R.string.spaces_members_title),
+                        sendDmLabel = stringResource(R.string.dm_send_message),
+                        spaceAdminTitle = stringResource(R.string.space_admin_title),
+                        saveLabel = stringResource(R.string.common_save),
+                        cancelLabel = stringResource(R.string.common_cancel),
+                        onOpenDirectDm = { dmId, dmTitle ->
+                            val encoded = Uri.encode(dmTitle)
+                            navController.navigate("dm/$dmId/$encoded")
+                        },
+                        onOpenTextChannel = { channel ->
+                            val encodedName = Uri.encode(channel.name)
+                            navController.navigate("chat/${channel.id}/$encodedName")
+                        },
+                        onJoinVoiceChannel = { space, category, channel ->
+                            container.voiceEngine.joinChannel(
+                                instanceUrl = active.instanceUrl,
+                                jwtToken = active.token,
+                                space = space,
+                                category = category,
+                                channel = channel,
+                            )
+                            navController.navigate("voice")
+                        },
+                        onOpenActiveVoice = { navController.navigate("voice") },
+                        modifier = tabModifier,
                     )
-                    navController.navigate("voice")
-                },
-                onBack = { navController.popBackStack() },
-            )
+
+                    1 -> DmListScreen(
+                        instanceUrl = active.instanceUrl,
+                        wsClient = container.wsClient,
+                        title = stringResource(R.string.dm_title),
+                        emptyText = stringResource(R.string.dm_empty),
+                        groupBadge = stringResource(R.string.dm_group_badge),
+                        onOpenDm = { dm ->
+                            val encoded = Uri.encode(dm.displayTitle(myId))
+                            navController.navigate("dm/${dm.id}/$encoded")
+                        },
+                        onStartDmCall = { dm ->
+                            container.voiceEngine.joinDmCall(
+                                instanceUrl = active.instanceUrl,
+                                jwtToken = active.token,
+                                dmChannelId = dm.id,
+                                dmTitle = dm.displayTitle(myId),
+                            )
+                            navController.navigate("voice")
+                        },
+                        modifier = tabModifier,
+                    )
+
+                    else -> SettingsScreen(
+                        instanceUrl = active.instanceUrl,
+                        jwtToken = active.token,
+                        username = currentUserLabel,
+                        appVersion = "0.6.0-alpha",
+                        restClient = container.restClient,
+                        wsClient = container.wsClient,
+                        voiceEngine = container.voiceEngine,
+                        title = stringResource(R.string.settings_title),
+                        userTabLabel = stringResource(R.string.settings_tab_user),
+                        instanceTabLabel = stringResource(R.string.settings_tab_instance),
+                        accountHeader = stringResource(R.string.settings_account),
+                        audioHeader = stringResource(R.string.voice_opus_title),
+                        videoHeader = stringResource(R.string.settings_video),
+                        instanceGeneralHeader = stringResource(R.string.settings_instance_general),
+                        instanceFederationHeader = stringResource(R.string.settings_instance_federation),
+                        instanceStreamingHeader = stringResource(R.string.settings_instance_streaming),
+                        voiceModeLabel = stringResource(R.string.voice_mode_voice),
+                        musicModeLabel = stringResource(R.string.voice_mode_music),
+                        stereoLabel = stringResource(R.string.voice_stereo),
+                        autoBitrateLabel = stringResource(R.string.voice_bitrate_auto),
+                        idleSuspendLabel = stringResource(R.string.voice_idle_suspend),
+                        soundboardVolumeLabel = stringResource(R.string.soundboard_volume),
+                        hideNonVideoLabel = stringResource(R.string.voice_hide_non_video),
+                        checkUpdatesLabel = stringResource(R.string.settings_check_updates),
+                        saveLabel = stringResource(R.string.common_save),
+                        logoutLabel = stringResource(R.string.settings_logout),
+                        onCheckUpdates = {
+                            scope.launch {
+                                val repoSlug = context.getString(R.string.updater_repo_slug)
+                                val result = container.releaseUpdater.checkLatestRelease(
+                                    repoSlug = repoSlug,
+                                    currentVersion = "0.6.0-alpha",
+                                )
+                                if (result != null && result.updateAvailable && result.downloadUrl.isNotBlank()) {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(result.downloadUrl)))
+                                } else {
+                                    Toast.makeText(context, updateUpToDateText, Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        },
+                        onLogout = {
+                            container.voiceEngine.leaveChannel()
+                            container.wsClient.disconnect()
+                            container.sessionStorage.clear()
+                            session = null
+                            navController.navigate("auth") {
+                                popUpTo("home") { inclusive = true }
+                            }
+                        },
+                        modifier = tabModifier,
+                    )
+                }
+            }
         }
 
         composable(
@@ -211,59 +312,6 @@ private fun BackspaceRootApp(container: AppContainer) {
                         dmTitle = dmTitle,
                     )
                     navController.navigate("voice")
-                },
-                onBack = { navController.popBackStack() },
-            )
-        }
-
-        composable("settings") {
-            val active = session ?: return@composable
-            val currentUserLabel = container.wsClient.snapshot.value.currentUser?.label ?: "-"
-            SettingsScreen(
-                instanceUrl = active.instanceUrl,
-                jwtToken = active.token,
-                username = currentUserLabel,
-                appVersion = "0.5.0-alpha",
-                restClient = container.restClient,
-                wsClient = container.wsClient,
-                voiceEngine = container.voiceEngine,
-                title = stringResource(R.string.settings_title),
-                accountHeader = stringResource(R.string.settings_account),
-                audioHeader = stringResource(R.string.voice_opus_title),
-                videoHeader = stringResource(R.string.settings_video),
-                instanceAdminHeader = stringResource(R.string.settings_instance_admin),
-                voiceModeLabel = stringResource(R.string.voice_mode_voice),
-                musicModeLabel = stringResource(R.string.voice_mode_music),
-                stereoLabel = stringResource(R.string.voice_stereo),
-                autoBitrateLabel = stringResource(R.string.voice_bitrate_auto),
-                idleSuspendLabel = stringResource(R.string.voice_idle_suspend),
-                soundboardVolumeLabel = stringResource(R.string.soundboard_volume),
-                hideNonVideoLabel = stringResource(R.string.voice_hide_non_video),
-                checkUpdatesLabel = stringResource(R.string.settings_check_updates),
-                saveLabel = stringResource(R.string.common_save),
-                logoutLabel = stringResource(R.string.settings_logout),
-                onCheckUpdates = {
-                    scope.launch {
-                        val repoSlug = context.getString(R.string.updater_repo_slug)
-                        val result = container.releaseUpdater.checkLatestRelease(
-                            repoSlug = repoSlug,
-                            currentVersion = "0.5.0-alpha",
-                        )
-                        if (result != null && result.updateAvailable && result.downloadUrl.isNotBlank()) {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(result.downloadUrl)))
-                        } else {
-                            Toast.makeText(context, updateUpToDateText, Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                },
-                onLogout = {
-                    container.voiceEngine.leaveChannel()
-                    container.wsClient.disconnect()
-                    container.sessionStorage.clear()
-                    session = null
-                    navController.navigate("auth") {
-                        popUpTo("spaces") { inclusive = true }
-                    }
                 },
                 onBack = { navController.popBackStack() },
             )

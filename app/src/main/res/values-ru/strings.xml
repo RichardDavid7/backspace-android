@@ -52,6 +52,12 @@
     <string name="dm_empty">Личных сообщений пока нет.</string>
     <string name="dm_group_badge">Группа</string>
     <string name="dm_send_message">Написать ЛС</string>
+    <string name="dm_tab_label">Сообщения</string>
+    <string name="settings_tab_user">Пользователь</string>
+    <string name="settings_tab_instance">Инстанс</string>
+    <string name="settings_instance_general">Общие и регистрация</string>
+    <string name="settings_instance_federation">Федерация и каталог</string>
+    <string name="settings_instance_streaming">Стриминг, Opus и саундборд</string>
     <string name="common_save">Сохранить</string>
     <string name="common_cancel">Отмена</string>
     <string name="updater_repo_slug" translatable="false"></string>

@@ -11,8 +11,42 @@ data class InstanceInfo(
     val commit: String? = null,
 )
 
+object UploadUrlResolver {
+    fun resolve(instanceUrl: String, raw: String?): String? {
+        val trimmed = raw?.trim().orEmpty()
+        if (trimmed.isEmpty()) return null
+        val base = instanceUrl.trimEnd('/')
+        return when {
+            trimmed.startsWith("http://") || trimmed.startsWith("https://") -> trimmed
+            trimmed.startsWith("/") -> "$base$trimmed"
+            else -> "$base/api/uploads/$trimmed"
+        }
+    }
+}
+
+@Serializable
+data class InstanceAdminSettings(
+    val instanceName: String = "Backspace",
+    val registrationOpen: Boolean = true,
+    val federatedRegistrationOpen: Boolean = true,
+    val discoveryEnabled: Boolean = true,
+    val gifEnabled: Boolean = false,
+    val maxUploadSizeMb: Int = 50,
+    val federationRelayEnabled: Boolean = true,
+    val federationRelayTtlDays: Int = 7,
+    val defaultAutoRotateIntervalDays: Int = 30,
+    val autoAcceptPeering: Boolean = false,
+    val directoryEnabled: Boolean = false,
+    val directoryBrowseEnabled: Boolean = false,
+)
+
 @Serializable
 data class InstanceStreamingLimits(
+    val maxBitrateKbps: Int = 8000,
+    val minBitrateKbps: Int = 500,
+    val maxResolution: Int = 1080,
+    val maxFramerate: Int = 60,
+    val allowCustomBitrate: Boolean = true,
     val defaultAudioBitrateKbps: Int = 64,
     val maxAudioBitrateKbps: Int = 512,
     val allowMusicMode: Boolean = true,
@@ -37,8 +71,7 @@ data class User(
     val isAdmin: Boolean = false,
 ) {
     val label: String get() = displayName?.takeIf { it.isNotBlank() } ?: username
-    fun avatarUrl(instanceUrl: String): String? =
-        avatar?.takeIf { it.isNotBlank() }?.let { "$instanceUrl/api/uploads/$it" }
+    fun avatarUrl(instanceUrl: String): String? = UploadUrlResolver.resolve(instanceUrl, avatar)
 }
 
 @Serializable
@@ -58,8 +91,7 @@ data class Space(
     val allowMusicMode: Boolean? = null,
     val allowStereoAudio: Boolean? = null,
 ) {
-    fun iconUrl(instanceUrl: String): String? =
-        icon?.takeIf { it.isNotBlank() }?.let { "$instanceUrl/api/uploads/$it" }
+    fun iconUrl(instanceUrl: String): String? = UploadUrlResolver.resolve(instanceUrl, icon)
 }
 
 @Serializable

@@ -1,6 +1,8 @@
 package com.backspace.android
 
 import android.app.Application
+import coil.ImageLoader
+import coil.ImageLoaderFactory
 import com.backspace.core.network.BackspaceRestClient
 import com.backspace.core.network.BackspaceWebSocketClient
 import com.backspace.core.network.SecureSessionStorage
@@ -15,7 +17,7 @@ class AppContainer(application: Application) {
     val releaseUpdater = GitHubReleaseUpdater(restClient.okHttpClient)
 }
 
-class BackspaceApplication : Application() {
+class BackspaceApplication : Application(), ImageLoaderFactory {
     lateinit var container: AppContainer
         private set
 
@@ -23,4 +25,10 @@ class BackspaceApplication : Application() {
         super.onCreate()
         container = AppContainer(this)
     }
+
+    override fun newImageLoader(): ImageLoader =
+        ImageLoader.Builder(this)
+            .okHttpClient(container.restClient.okHttpClient)
+            .crossfade(true)
+            .build()
 }

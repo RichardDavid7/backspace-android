@@ -9,20 +9,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -36,6 +34,7 @@ import com.backspace.core.designsystem.AetherPurpleSlider
 import com.backspace.core.designsystem.AetherSurfaceCard
 import com.backspace.core.designsystem.AetherTheme
 import com.backspace.core.model.AudioMode
+import com.backspace.core.model.InstanceAdminSettings
 import com.backspace.core.network.BackspaceRestClient
 import com.backspace.core.network.BackspaceWebSocketClient
 import com.backspace.core.voice.BackspaceVoiceEngine
@@ -51,10 +50,14 @@ fun SettingsScreen(
     wsClient: BackspaceWebSocketClient,
     voiceEngine: BackspaceVoiceEngine,
     title: String,
+    userTabLabel: String,
+    instanceTabLabel: String,
     accountHeader: String,
     audioHeader: String,
     videoHeader: String,
-    instanceAdminHeader: String,
+    instanceGeneralHeader: String,
+    instanceFederationHeader: String,
+    instanceStreamingHeader: String,
     voiceModeLabel: String,
     musicModeLabel: String,
     stereoLabel: String,
@@ -67,7 +70,7 @@ fun SettingsScreen(
     logoutLabel: String,
     onCheckUpdates: () -> Unit,
     onLogout: () -> Unit,
-    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val colors = AetherTheme.colors
     val scope = rememberCoroutineScope()
@@ -76,217 +79,279 @@ fun SettingsScreen(
     val prefs = voiceState.userPrefs
     val isInstanceAdmin = snapshot.currentUser?.isAdmin == true
     val limits = snapshot.streamingLimits
+
+    var selectedTab by remember { mutableIntStateOf(0) } // 0 = Usuário, 1 = Instância
+    var adminSettings by remember { mutableStateOf<InstanceAdminSettings?>(null) }
     var adminStatusMsg by remember { mutableStateOf<String?>(null) }
 
+    LaunchedEffect(isInstanceAdmin, selectedTab) {
+        if (isInstanceAdmin && selectedTab == 1 && adminSettings == null) {
+            runCatching { restClient.getInstanceAdminSettings(instanceUrl, jwtToken) }
+                .onSuccess { adminSettings = it }
+                .onFailure { adminStatusMsg = it.message }
+        }
+    }
+
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .background(colors.bgBase)
-            .systemBarsPadding()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    tint = colors.textPrimary,
-                )
-            }
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleLarge,
-                color = colors.textPrimary,
-            )
-        }
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge,
+            color = colors.textPrimary,
+        )
 
-        AetherSurfaceCard {
-            Text(text = accountHeader, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
-            Spacer(Modifier.height(6.dp))
-            Text(text = username, color = colors.accentMint, style = MaterialTheme.typography.bodyMedium)
-            Text(text = instanceUrl, color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
-            Text(text = "v$appVersion", color = colors.textTertiary, style = MaterialTheme.typography.labelSmall)
-        }
-
-        AetherSurfaceCard {
-            Text(text = audioHeader, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
-            Spacer(Modifier.height(10.dp))
-
+        if (isInstanceAdmin) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(
-                    selected = prefs.mode == AudioMode.VOICE,
-                    onClick = { voiceEngine.updateUserAudioPreferences { it.copy(mode = AudioMode.VOICE) } },
-                    label = { Text(voiceModeLabel) },
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    label = { Text(userTabLabel) },
                 )
                 FilterChip(
-                    selected = prefs.mode == AudioMode.MUSIC,
-                    onClick = { voiceEngine.updateUserAudioPreferences { it.copy(mode = AudioMode.MUSIC) } },
-                    label = { Text(musicModeLabel) },
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    label = { Text(instanceTabLabel) },
                 )
             }
+        }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(text = stereoLabel, color = colors.textPrimary)
-                Switch(
+        if (selectedTab == 0 || !isInstanceAdmin) {
+            // ── ABA USUÁRIO ──
+            AetherSurfaceCard {
+                Text(text = accountHeader, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+                Spacer(Modifier.height(6.dp))
+                Text(text = username, color = colors.accentMint, style = MaterialTheme.typography.bodyMedium)
+                Text(text = instanceUrl, color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
+                Text(text = "v$appVersion", color = colors.textTertiary, style = MaterialTheme.typography.labelSmall)
+            }
+
+            AetherSurfaceCard {
+                Text(text = audioHeader, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+                Spacer(Modifier.height(10.dp))
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = prefs.mode == AudioMode.VOICE,
+                        onClick = { voiceEngine.updateUserAudioPreferences { it.copy(mode = AudioMode.VOICE) } },
+                        label = { Text(voiceModeLabel) },
+                    )
+                    FilterChip(
+                        selected = prefs.mode == AudioMode.MUSIC,
+                        onClick = { voiceEngine.updateUserAudioPreferences { it.copy(mode = AudioMode.MUSIC) } },
+                        label = { Text(musicModeLabel) },
+                    )
+                }
+
+                SettingsToggleRow(
+                    label = stereoLabel,
                     checked = prefs.stereo,
                     onCheckedChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(stereo = v) } },
                 )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(text = autoBitrateLabel, color = colors.textPrimary)
-                Switch(
+                SettingsToggleRow(
+                    label = autoBitrateLabel,
                     checked = prefs.bitrateAuto,
                     onCheckedChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(bitrateAuto = v) } },
                 )
-            }
 
-            if (!prefs.bitrateAuto) {
-                Text(
-                    text = "${prefs.manualBitrateKbps} kbps",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textSecondary,
-                )
-                AetherPurpleSlider(
-                    value = prefs.manualBitrateKbps.toFloat().coerceIn(8f, 512f),
-                    onValueChange = { v ->
-                        voiceEngine.updateUserAudioPreferences { it.copy(manualBitrateKbps = v.toInt()) }
-                    },
-                    valueRange = 8f..512f,
-                )
-            }
+                if (!prefs.bitrateAuto) {
+                    Text(
+                        text = "${prefs.manualBitrateKbps} kbps",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textSecondary,
+                    )
+                    AetherPurpleSlider(
+                        value = prefs.manualBitrateKbps.toFloat().coerceIn(8f, 512f),
+                        onValueChange = { v ->
+                            voiceEngine.updateUserAudioPreferences { it.copy(manualBitrateKbps = v.toInt()) }
+                        },
+                        valueRange = 8f..512f,
+                    )
+                }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(text = idleSuspendLabel, color = colors.textPrimary)
-                Switch(
+                SettingsToggleRow(
+                    label = idleSuspendLabel,
                     checked = prefs.idleSuspendEnabled,
                     onCheckedChange = { v ->
                         voiceEngine.updateUserAudioPreferences { it.copy(idleSuspendEnabled = v) }
                     },
                 )
+
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "$soundboardVolumeLabel: ${(voiceState.soundboardVolume * 100).toInt()}%",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                )
+                AetherPurpleSlider(
+                    value = voiceState.soundboardVolume,
+                    onValueChange = { voiceEngine.setSoundboardVolume(it) },
+                    valueRange = 0f..1f,
+                )
             }
 
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = "$soundboardVolumeLabel: ${(voiceState.soundboardVolume * 100).toInt()}%",
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.textSecondary,
-            )
-            AetherPurpleSlider(
-                value = voiceState.soundboardVolume,
-                onValueChange = { voiceEngine.setSoundboardVolume(it) },
-                valueRange = 0f..1f,
-            )
-        }
-
-        AetherSurfaceCard {
-            Text(text = videoHeader, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(text = hideNonVideoLabel, color = colors.textPrimary)
-                Switch(
+            AetherSurfaceCard {
+                Text(text = videoHeader, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+                SettingsToggleRow(
+                    label = hideNonVideoLabel,
                     checked = prefs.hideNonVideoParticipants,
                     onCheckedChange = { v ->
                         voiceEngine.updateUserAudioPreferences { it.copy(hideNonVideoParticipants = v) }
                     },
                 )
             }
-        }
 
-        if (isInstanceAdmin) {
-            var instDefaultBr by remember(limits.defaultAudioBitrateKbps) { mutableStateOf(limits.defaultAudioBitrateKbps.toFloat()) }
-            var instMaxBr by remember(limits.maxAudioBitrateKbps) { mutableStateOf(limits.maxAudioBitrateKbps.toFloat()) }
-            var instMusic by remember(limits.allowMusicMode) { mutableStateOf(limits.allowMusicMode) }
-            var instStereo by remember(limits.allowStereoAudio) { mutableStateOf(limits.allowStereoAudio) }
-            var instSoundboard by remember(limits.soundboardEnabled) { mutableStateOf(limits.soundboardEnabled) }
+            AetherPrimaryButton(text = checkUpdatesLabel, onClick = onCheckUpdates)
+
+            OutlinedButton(
+                onClick = onLogout,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(text = logoutLabel, color = colors.accentPeach)
+            }
+        } else {
+            // ── ABA ADMINISTRAÇÃO COMPLETA DA INSTÂNCIA ──
+            val currentAdmin = adminSettings ?: InstanceAdminSettings()
+            var instanceName by remember(currentAdmin) { mutableStateOf(currentAdmin.instanceName) }
+            var registrationOpen by remember(currentAdmin) { mutableStateOf(currentAdmin.registrationOpen) }
+            var federatedReg by remember(currentAdmin) { mutableStateOf(currentAdmin.federatedRegistrationOpen) }
+            var discoveryEnabled by remember(currentAdmin) { mutableStateOf(currentAdmin.discoveryEnabled) }
+            var gifEnabled by remember(currentAdmin) { mutableStateOf(currentAdmin.gifEnabled) }
+            var maxUploadMb by remember(currentAdmin) { mutableStateOf(currentAdmin.maxUploadSizeMb.toFloat()) }
+
+            var relayEnabled by remember(currentAdmin) { mutableStateOf(currentAdmin.federationRelayEnabled) }
+            var autoPeering by remember(currentAdmin) { mutableStateOf(currentAdmin.autoAcceptPeering) }
+            var dirEnabled by remember(currentAdmin) { mutableStateOf(currentAdmin.directoryEnabled) }
+            var dirBrowse by remember(currentAdmin) { mutableStateOf(currentAdmin.directoryBrowseEnabled) }
+
+            var videoMaxBitrate by remember(limits) { mutableStateOf(limits.maxBitrateKbps.toFloat()) }
+            var allowCustomVideoBr by remember(limits) { mutableStateOf(limits.allowCustomBitrate) }
+            var instDefaultAudio by remember(limits) { mutableStateOf(limits.defaultAudioBitrateKbps.toFloat()) }
+            var instMaxAudio by remember(limits) { mutableStateOf(limits.maxAudioBitrateKbps.toFloat()) }
+            var instMusic by remember(limits) { mutableStateOf(limits.allowMusicMode) }
+            var instStereo by remember(limits) { mutableStateOf(limits.allowStereoAudio) }
+            var instSoundboard by remember(limits) { mutableStateOf(limits.soundboardEnabled) }
+            var instMaxSbSounds by remember(limits) { mutableStateOf(limits.maxSoundboardSoundsPerScope.toFloat()) }
+            var instMaxSbConc by remember(limits) { mutableStateOf(limits.maxConcurrentSoundboardSounds.toFloat()) }
 
             AetherSurfaceCard {
-                Text(text = instanceAdminHeader, style = MaterialTheme.typography.titleMedium, color = colors.accentAmber)
+                Text(text = instanceGeneralHeader, style = MaterialTheme.typography.titleMedium, color = colors.accentAmber)
                 Spacer(Modifier.height(8.dp))
-                Text("Opus default: ${instDefaultBr.toInt()} kbps", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
-                AetherPurpleSlider(value = instDefaultBr, onValueChange = { instDefaultBr = it }, valueRange = 8f..512f)
-                Text("Opus max: ${instMaxBr.toInt()} kbps", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
-                AetherPurpleSlider(value = instMaxBr, onValueChange = { instMaxBr = it }, valueRange = 8f..512f)
-                Row(
+                OutlinedTextField(
+                    value = instanceName,
+                    onValueChange = { instanceName = it },
+                    label = { Text("Instance name") },
+                    singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(musicModeLabel, color = colors.textPrimary)
-                    Switch(checked = instMusic, onCheckedChange = { instMusic = it })
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(stereoLabel, color = colors.textPrimary)
-                    Switch(checked = instStereo, onCheckedChange = { instStereo = it })
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text("Soundboard", color = colors.textPrimary)
-                    Switch(checked = instSoundboard, onCheckedChange = { instSoundboard = it })
-                }
-                if (!adminStatusMsg.isNullOrBlank()) {
-                    Text(adminStatusMsg!!, color = colors.accentMint, style = MaterialTheme.typography.bodySmall)
-                }
-                Spacer(Modifier.height(6.dp))
-                AetherPrimaryButton(
-                    text = saveLabel,
-                    onClick = {
-                        scope.launch {
-                            val updatedLimits = limits.copy(
-                                defaultAudioBitrateKbps = instDefaultBr.toInt(),
-                                maxAudioBitrateKbps = instMaxBr.toInt().coerceAtLeast(instDefaultBr.toInt()),
-                                allowMusicMode = instMusic,
-                                allowStereoAudio = instStereo,
-                                soundboardEnabled = instSoundboard,
-                            )
-                            runCatching {
-                                restClient.updateStreamingLimits(instanceUrl, jwtToken, updatedLimits)
-                            }.onSuccess { saved ->
-                                wsClient.updateStreamingLimitsLocal(saved)
-                                adminStatusMsg = "OK"
-                            }.onFailure { err ->
-                                adminStatusMsg = err.message
-                            }
-                        }
-                    },
                 )
+                Spacer(Modifier.height(6.dp))
+                SettingsToggleRow("Registration open", registrationOpen) { registrationOpen = it }
+                SettingsToggleRow("Federated registration", federatedReg) { federatedReg = it }
+                SettingsToggleRow("Discovery enabled", discoveryEnabled) { discoveryEnabled = it }
+                SettingsToggleRow("GIFs enabled", gifEnabled) { gifEnabled = it }
+                Text("Max upload: ${maxUploadMb.toInt()} MB", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
+                AetherPurpleSlider(value = maxUploadMb.coerceIn(5f, 500f), onValueChange = { maxUploadMb = it }, valueRange = 5f..500f)
             }
-        }
 
-        AetherPrimaryButton(text = checkUpdatesLabel, onClick = onCheckUpdates)
+            AetherSurfaceCard {
+                Text(text = instanceFederationHeader, style = MaterialTheme.typography.titleMedium, color = colors.accentSky)
+                SettingsToggleRow("Federation relay", relayEnabled) { relayEnabled = it }
+                SettingsToggleRow("Auto-accept peering", autoPeering) { autoPeering = it }
+                SettingsToggleRow("Directory listing", dirEnabled) { dirEnabled = it }
+                SettingsToggleRow("Browse directory", dirBrowse) { dirBrowse = it }
+            }
 
-        OutlinedButton(
-            onClick = onLogout,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(text = logoutLabel, color = colors.accentPeach)
+            AetherSurfaceCard {
+                Text(text = instanceStreamingHeader, style = MaterialTheme.typography.titleMedium, color = colors.accentPrimary)
+                Spacer(Modifier.height(6.dp))
+                Text("Video max bitrate: ${videoMaxBitrate.toInt()} kbps", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
+                AetherPurpleSlider(value = videoMaxBitrate.coerceIn(500f, 20000f), onValueChange = { videoMaxBitrate = it }, valueRange = 500f..20000f)
+                SettingsToggleRow("Allow custom video bitrate", allowCustomVideoBr) { allowCustomVideoBr = it }
+
+                Spacer(Modifier.height(6.dp))
+                Text("Opus default: ${instDefaultAudio.toInt()} kbps", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
+                AetherPurpleSlider(value = instDefaultAudio.coerceIn(8f, 512f), onValueChange = { instDefaultAudio = it }, valueRange = 8f..512f)
+                Text("Opus max: ${instMaxAudio.toInt()} kbps", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
+                AetherPurpleSlider(value = instMaxAudio.coerceIn(8f, 512f), onValueChange = { instMaxAudio = it }, valueRange = 8f..512f)
+                SettingsToggleRow(musicModeLabel, instMusic) { instMusic = it }
+                SettingsToggleRow(stereoLabel, instStereo) { instStereo = it }
+
+                Spacer(Modifier.height(6.dp))
+                SettingsToggleRow("Soundboard", instSoundboard) { instSoundboard = it }
+                Text("Max sounds / scope: ${instMaxSbSounds.toInt()}", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
+                AetherPurpleSlider(value = instMaxSbSounds.coerceIn(1f, 200f), onValueChange = { instMaxSbSounds = it }, valueRange = 1f..200f)
+                Text("Max concurrent sounds: ${instMaxSbConc.toInt()}", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
+                AetherPurpleSlider(value = instMaxSbConc.coerceIn(1f, 10f), onValueChange = { instMaxSbConc = it }, valueRange = 1f..10f)
+            }
+
+            if (!adminStatusMsg.isNullOrBlank()) {
+                Text(adminStatusMsg!!, color = colors.accentMint, style = MaterialTheme.typography.bodySmall)
+            }
+
+            AetherPrimaryButton(
+                text = saveLabel,
+                onClick = {
+                    scope.launch {
+                        adminStatusMsg = null
+                        val newAdmin = currentAdmin.copy(
+                            instanceName = instanceName.trim().ifBlank { "Backspace" },
+                            registrationOpen = registrationOpen,
+                            federatedRegistrationOpen = federatedReg,
+                            discoveryEnabled = discoveryEnabled,
+                            gifEnabled = gifEnabled,
+                            maxUploadSizeMb = maxUploadMb.toInt(),
+                            federationRelayEnabled = relayEnabled,
+                            autoAcceptPeering = autoPeering,
+                            directoryEnabled = dirEnabled,
+                            directoryBrowseEnabled = dirBrowse,
+                        )
+                        val newLimits = limits.copy(
+                            maxBitrateKbps = videoMaxBitrate.toInt(),
+                            allowCustomBitrate = allowCustomVideoBr,
+                            defaultAudioBitrateKbps = instDefaultAudio.toInt(),
+                            maxAudioBitrateKbps = instMaxAudio.toInt().coerceAtLeast(instDefaultAudio.toInt()),
+                            allowMusicMode = instMusic,
+                            allowStereoAudio = instStereo,
+                            soundboardEnabled = instSoundboard,
+                            maxSoundboardSoundsPerScope = instMaxSbSounds.toInt(),
+                            maxConcurrentSoundboardSounds = instMaxSbConc.toInt(),
+                        )
+                        runCatching {
+                            val savedAdmin = restClient.updateInstanceAdminSettings(instanceUrl, jwtToken, newAdmin)
+                            val savedLimits = restClient.updateStreamingLimits(instanceUrl, jwtToken, newLimits)
+                            savedAdmin to savedLimits
+                        }.onSuccess { (savedAdmin, savedLimits) ->
+                            adminSettings = savedAdmin
+                            wsClient.updateStreamingLimitsLocal(savedLimits)
+                            adminStatusMsg = "OK"
+                        }.onFailure { err ->
+                            adminStatusMsg = err.message
+                        }
+                    }
+                },
+            )
         }
+    }
+}
+
+@Composable
+private fun SettingsToggleRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    val colors = AetherTheme.colors
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(text = label, color = colors.textPrimary)
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }

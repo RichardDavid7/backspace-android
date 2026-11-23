@@ -52,6 +52,12 @@
     <string name="dm_empty">暂无私信。</string>
     <string name="dm_group_badge">群组</string>
     <string name="dm_send_message">发送私信</string>
+    <string name="dm_tab_label">消息</string>
+    <string name="settings_tab_user">用户</string>
+    <string name="settings_tab_instance">实例</string>
+    <string name="settings_instance_general">常规与注册</string>
+    <string name="settings_instance_federation">联邦与目录</string>
+    <string name="settings_instance_streaming">串流、Opus 与音效板</string>
     <string name="common_save">保存</string>
     <string name="common_cancel">取消</string>
     <string name="updater_repo_slug" translatable="false"></string>

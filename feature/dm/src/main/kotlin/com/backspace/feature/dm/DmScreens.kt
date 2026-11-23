@@ -57,28 +57,19 @@ fun DmListScreen(
     groupBadge: String,
     onOpenDm: (DmChannel) -> Unit,
     onStartDmCall: (DmChannel) -> Unit,
-    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val colors = AetherTheme.colors
     val snapshot by wsClient.snapshot.collectAsStateWithLifecycle()
     val myUserId = snapshot.currentUser?.id
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .background(colors.bgBase)
-            .systemBarsPadding()
-            .padding(16.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = colors.textPrimary)
-            }
-            Text(text = title, style = MaterialTheme.typography.titleLarge, color = colors.textPrimary)
-        }
+        Text(text = title, style = MaterialTheme.typography.titleLarge, color = colors.textPrimary)
 
         Spacer(Modifier.height(10.dp))
 

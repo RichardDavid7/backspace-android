@@ -3,6 +3,7 @@ package com.backspace.core.network
 import android.util.Base64
 import com.backspace.core.model.DmChannel
 import com.backspace.core.model.DmMessage
+import com.backspace.core.model.InstanceAdminSettings
 import com.backspace.core.model.InstanceInfo
 import com.backspace.core.model.InstanceStreamingLimits
 import com.backspace.core.model.LiveKitTokenResponse
@@ -208,6 +209,27 @@ class BackspaceRestClient(
         return executePatch(
             url = "$base/api/spaces/$spaceId",
             body = json.encodeToString(UpdateSpaceAdminRequest.serializer(), request),
+            token = token,
+        )
+    }
+
+    suspend fun getInstanceAdminSettings(
+        instanceUrl: String,
+        token: String,
+    ): InstanceAdminSettings {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executeGet("$base/api/settings/instance", token = token)
+    }
+
+    suspend fun updateInstanceAdminSettings(
+        instanceUrl: String,
+        token: String,
+        settings: InstanceAdminSettings,
+    ): InstanceAdminSettings {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executePatch(
+            url = "$base/api/settings/instance",
+            body = json.encodeToString(InstanceAdminSettings.serializer(), settings),
             token = token,
         )
     }

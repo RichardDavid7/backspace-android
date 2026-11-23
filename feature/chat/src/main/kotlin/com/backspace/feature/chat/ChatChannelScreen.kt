@@ -78,6 +78,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.backspace.core.designsystem.AetherAvatar
 import com.backspace.core.designsystem.AetherSurfaceCard
 import com.backspace.core.designsystem.AetherTheme
@@ -216,7 +217,11 @@ fun ChatChannelScreen(
                 .navigationBarsPadding(),
         ) {
             AsyncImage(
-                model = imgUrl,
+                model = ImageRequest.Builder(context)
+                    .data(imgUrl)
+                    .addHeader("Authorization", "Bearer $jwtToken")
+                    .crossfade(true)
+                    .build(),
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize(),
@@ -487,17 +492,30 @@ fun ChatChannelScreen(
                             Spacer(Modifier.height(8.dp))
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 msg.attachments.forEach { att ->
-                                    val fullUrl = "$instanceUrl${att.downloadPath()}"
-                                    if (att.isImage) {
-                                        val thumbUrl = att.thumbnailFilename?.let { "$instanceUrl/api/uploads/$it" }
-                                            ?: fullUrl
+                                    val fullUrl = att.resolvedFileUrl(instanceUrl)
+                                    if (att.isImage && fullUrl.isNotBlank()) {
+                                        var activeUrl by remember(att.id) {
+                                            mutableStateOf(att.resolvedThumbnailUrl(instanceUrl))
+                                        }
+                                        val req = remember(activeUrl) {
+                                            ImageRequest.Builder(context)
+                                                .data(activeUrl)
+                                                .addHeader("Authorization", "Bearer $jwtToken")
+                                                .crossfade(true)
+                                                .build()
+                                        }
                                         AsyncImage(
-                                            model = thumbUrl,
+                                            model = req,
                                             contentDescription = att.displayName,
                                             contentScale = ContentScale.Crop,
+                                            onError = {
+                                                if (activeUrl != fullUrl) {
+                                                    activeUrl = fullUrl
+                                                }
+                                            },
                                             modifier = Modifier
                                                 .fillMaxWidth(0.75f)
-                                                .heightIn(min = 90.dp, max = 180.dp)
+                                                .height(170.dp)
                                                 .clip(RoundedCornerShape(10.dp))
                                                 .background(colors.bgBase)
                                                 .clickable { fullscreenImageUrl = fullUrl },

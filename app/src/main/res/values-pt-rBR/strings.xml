@@ -52,6 +52,12 @@
     <string name="dm_empty">Nenhuma mensagem direta ainda.</string>
     <string name="dm_group_badge">Grupo</string>
     <string name="dm_send_message">Enviar DM</string>
+    <string name="dm_tab_label">Mensagens</string>
+    <string name="settings_tab_user">Usuário</string>
+    <string name="settings_tab_instance">Instância</string>
+    <string name="settings_instance_general">Geral e Registro</string>
+    <string name="settings_instance_federation">Federação e Diretório</string>
+    <string name="settings_instance_streaming">Streaming, Opus e Soundboard</string>
     <string name="common_save">Salvar</string>
     <string name="common_cancel">Cancelar</string>
     <string name="updater_repo_slug" translatable="false"></string>

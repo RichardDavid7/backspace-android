@@ -90,12 +90,11 @@ fun SpacesScreen(
     spaceAdminTitle: String,
     saveLabel: String,
     cancelLabel: String,
-    onOpenDms: () -> Unit,
     onOpenDirectDm: (dmChannelId: String, dmTitle: String) -> Unit,
     onOpenTextChannel: (Channel) -> Unit,
     onJoinVoiceChannel: (Space, ChannelCategory?, Channel) -> Unit,
     onOpenActiveVoice: () -> Unit,
-    onOpenSettings: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val colors = AetherTheme.colors
     val scope = rememberCoroutineScope()
@@ -192,10 +191,9 @@ fun SpacesScreen(
     }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .background(colors.bgBase)
-            .systemBarsPadding()
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         Row(
@@ -235,13 +233,6 @@ fun SpacesScreen(
                 }
             }
             Row {
-                IconButton(onClick = onOpenDms) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Chat,
-                        contentDescription = "DMs",
-                        tint = colors.accentSky,
-                    )
-                }
                 if (selectedSpace != null) {
                     IconButton(onClick = { showMembersDialog = true }) {
                         Icon(
@@ -259,13 +250,6 @@ fun SpacesScreen(
                             tint = colors.accentAmber,
                         )
                     }
-                }
-                IconButton(onClick = onOpenSettings) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = "Settings",
-                        tint = colors.textSecondary,
-                    )
                 }
             }
         }

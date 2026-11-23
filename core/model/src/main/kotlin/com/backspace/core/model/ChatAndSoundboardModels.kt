@@ -17,7 +17,19 @@ data class MessageAttachment(
     val createdAt: Long = 0L,
 ) {
     val displayName: String get() = originalName.ifBlank { filename }
-    val isImage: Boolean get() = mimetype.startsWith("image/", ignoreCase = true)
+    val isImage: Boolean
+        get() = mimetype.startsWith("image/", ignoreCase = true) ||
+            displayName.lowercase().let { n ->
+                n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".jpeg") ||
+                    n.endsWith(".webp") || n.endsWith(".gif") || n.endsWith(".avif")
+            }
+
+    fun resolvedFileUrl(instanceUrl: String): String =
+        UploadUrlResolver.resolve(instanceUrl, filename).orEmpty()
+
+    fun resolvedThumbnailUrl(instanceUrl: String): String =
+        UploadUrlResolver.resolve(instanceUrl, thumbnailFilename) ?: resolvedFileUrl(instanceUrl)
+
     fun downloadPath(): String = "/api/uploads/$filename"
 }
 
