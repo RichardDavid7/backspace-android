@@ -18,10 +18,17 @@ Native Android client (**Kotlin + Jetpack Compose + LiveKit native WebRTC**) for
 - [docs/api-contract.md](./docs/api-contract.md) — REST, WebSocket, and LiveKit protocol reference.
 - [AGENTS.md](./AGENTS.md) — Architecture rules and development guidelines.
 
-## Building the APK
+## Building & Updating (Obtainium-ready)
+
+### Obtainium
+Releases publish a single predictable APK asset (`backspace-android-<tag>.apk`) + `SHA256SUMS.txt` with `versionName` matched to the tag and monotonically increasing `versionCode`.
+1. Open **Obtainium** → **Add App** → paste this repository URL.
+2. Enable **Include prereleases** if you want `-alpha` / `-beta` builds.
 
 ### GitHub Actions
-Push to `main` (or create a `v*` tag) to build the APK automatically via the **Build Android APK** workflow.
+- Push to `main` builds and uploads an APK artifact.
+- Push a `v*` tag (e.g. `v0.2.0-alpha`) to publish an Obtainium-ready GitHub Release.
+- Optional repository secrets for persistent release signing (required for seamless in-place updates across builds): `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
 
 ### Local Build
 1. Install **JDK 21** and the **Android SDK** (API 35).

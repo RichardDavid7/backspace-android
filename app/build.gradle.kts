@@ -4,6 +4,9 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+val releaseKeystorePath: String? = System.getenv("KEYSTORE_FILE")
+val hasReleaseSigning: Boolean = !releaseKeystorePath.isNullOrBlank() && file(releaseKeystorePath).exists()
+
 android {
     namespace = "com.backspace.android"
     compileSdk = 35
@@ -12,8 +15,19 @@ android {
         applicationId = "com.backspace.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0-alpha"
+        versionCode = (findProperty("versionCode") as? String)?.toIntOrNull() ?: 2
+        versionName = (findProperty("versionName") as? String)?.takeIf { it.isNotBlank() } ?: "0.2.0-alpha"
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseKeystorePath!!)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
@@ -23,6 +37,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
