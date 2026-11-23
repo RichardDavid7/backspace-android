@@ -62,9 +62,17 @@ data class RealtimeSnapshot(
     val spaceVoiceStates: Map<String, SpaceVoiceState> = emptyMap(),
     val messagesByChannel: Map<String, List<Message>> = emptyMap(),
     val typingByChannel: Map<String, Set<String>> = emptyMap(),
+    val unreadDmCounts: Map<String, Int> = emptyMap(),
+    val channelMentionCounts: Map<String, Int> = emptyMap(),
     val queuedMessages: List<QueuedOutgoingMessage> = emptyList(),
     val lastError: String? = null,
-)
+) {
+    val totalUnreadDms: Int get() = unreadDmCounts.values.sum()
+    val totalSpaceMentions: Int get() = channelMentionCounts.values.sum()
+
+    fun mentionsForSpace(space: Space): Int =
+        space.channels.sumOf { ch -> channelMentionCounts[ch.id] ?: 0 }
+}
 
 class BackspaceWebSocketClient(
     private val restClient: BackspaceRestClient,
@@ -78,6 +86,7 @@ class BackspaceWebSocketClient(
     @Volatile private var webSocket: WebSocket? = null
     @Volatile private var activeInstanceUrl: String? = null
     @Volatile private var activeToken: String? = null
+    @Volatile private var activeOpenChannelId: String? = null
     @Volatile private var shouldReconnect: Boolean = false
     private var heartbeatJob: Job? = null
     private var reconnectJob: Job? = null
@@ -242,6 +251,18 @@ class BackspaceWebSocketClient(
             val existing = current.messagesByChannel[channelId].orEmpty()
             if (existing.any { it.id == message.id }) return@update current
             current.copy(messagesByChannel = current.messagesByChannel + (channelId to (existing + message)))
+        }
+    }
+
+    fun setActiveOpenChannel(channelId: String?) {
+        activeOpenChannelId = channelId
+        if (channelId != null) {
+            _snapshot.update { cur ->
+                cur.copy(
+                    unreadDmCounts = cur.unreadDmCounts - channelId,
+                    channelMentionCounts = cur.channelMentionCounts - channelId,
+                )
+            }
         }
     }
 
@@ -534,6 +555,11 @@ class BackspaceWebSocketClient(
         val spaceVoiceStates = obj["spaceVoiceStates"]?.let {
             runCatching { json.decodeFromJsonElement<Map<String, SpaceVoiceState>>(it) }.getOrNull()
         } ?: emptyMap()
+        val rawUnread = obj["unreadCounts"]?.let {
+            runCatching { json.decodeFromJsonElement<Map<String, Int>>(it) }.getOrNull()
+        } ?: emptyMap()
+        val dmIdSet = dmChannels.map { it.id }.toSet()
+        val initialDmUnread = rawUnread.filterKeys { it in dmIdSet }.filterValues { it > 0 }
 
         _snapshot.update {
             it.copy(
@@ -544,6 +570,7 @@ class BackspaceWebSocketClient(
                 voiceStates = voiceStates,
                 voiceUserStates = voiceUserStates,
                 spaceVoiceStates = spaceVoiceStates,
+                unreadDmCounts = initialDmUnread,
                 lastError = null,
             )
         }
@@ -689,6 +716,21 @@ class BackspaceWebSocketClient(
         val msgElem = obj["message"] ?: return
         val msg = runCatching { json.decodeFromJsonElement<Message>(msgElem) }.getOrNull() ?: return
         appendLocalMessage(msg.channelId, msg)
+
+        val me = _snapshot.value.currentUser
+        if (me != null && msg.userId != me.id && activeOpenChannelId != msg.channelId) {
+            val content = msg.safeContent
+            val isMentioned = msg.mentionEveryone ||
+                content.contains("@${me.username}", ignoreCase = true) ||
+                content.contains("@everyone", ignoreCase = true) ||
+                content.contains("@here", ignoreCase = true)
+            if (isMentioned) {
+                _snapshot.update { cur ->
+                    val prev = cur.channelMentionCounts[msg.channelId] ?: 0
+                    cur.copy(channelMentionCounts = cur.channelMentionCounts + (msg.channelId to (prev + 1)))
+                }
+            }
+        }
     }
 
     private fun handleMessageEdit(obj: JsonObject) {
@@ -799,6 +841,14 @@ class BackspaceWebSocketClient(
         val msgElem = obj["message"] ?: return
         val dmMsg = runCatching { json.decodeFromJsonElement<DmMessage>(msgElem) }.getOrNull() ?: return
         appendLocalMessage(dmMsg.dmChannelId, dmMsg.toChannelMessage())
+
+        val myId = _snapshot.value.currentUser?.id
+        if (myId != null && dmMsg.userId != myId && activeOpenChannelId != dmMsg.dmChannelId) {
+            _snapshot.update { cur ->
+                val prev = cur.unreadDmCounts[dmMsg.dmChannelId] ?: 0
+                cur.copy(unreadDmCounts = cur.unreadDmCounts + (dmMsg.dmChannelId to (prev + 1)))
+            }
+        }
     }
 
     private fun handleDmMessageDeleted(obj: JsonObject) {

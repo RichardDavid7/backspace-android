@@ -21,10 +21,27 @@ data class GifSearchResponse(
 data class StickerItem(
     val id: String,
     val name: String = "",
+    val token: String = "",
     val filename: String = "",
 ) {
-    fun assetUrl(instanceUrl: String): String =
-        "${instanceUrl.trimEnd('/')}/api/stickers/assets/$filename"
+    fun assetUrl(instanceUrl: String): String {
+        if (token.startsWith("sticker:")) return token.removePrefix("sticker:")
+        return "${instanceUrl.trimEnd('/')}/api/stickers/assets/$filename"
+    }
+
+    fun sendToken(instanceUrl: String): String =
+        token.ifBlank { "sticker:${assetUrl(instanceUrl)}" }
+}
+
+object StickerTokenParser {
+    private const val PREFIX = "sticker:"
+
+    fun extractImageUrl(content: String?): String? {
+        val trimmed = content?.trim().orEmpty()
+        if (!trimmed.startsWith(PREFIX)) return null
+        val url = trimmed.removePrefix(PREFIX)
+        return if (url.startsWith("http://") || url.startsWith("https://")) url else null
+    }
 }
 
 @Serializable

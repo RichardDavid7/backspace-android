@@ -13,9 +13,15 @@ Cliente Android **100% nativo** (Kotlin + Jetpack Compose + LiveKit WebRTC nativ
 ---
 
 ## 2. Mapa Rápido
-- `docs/architecture.md` — Grafo de módulos Gradle, dependências permitidas e roadmap v0.1 → v0.3.
+- `docs/parity-roadmap.md` — **Checklist Mestre de Paridade** (Backspace Web + Mumble/Mumla) e blocos planejados.
+- `docs/architecture.md` — Grafo de módulos Gradle, dependências permitidas e roadmap.
 - `docs/api-contract.md` — Contrato REST + WebSocket + LiveKit + Opus + Permissões.
 - `<modulo>/MODULE.md` — Cada módulo tem um `MODULE.md` curto descrevendo responsabilidade, API pública e invariantes.
+
+### Regra de Versionamento (SemVer a partir de `0.10.0`)
+- **Patch (`0.10.1`, `0.10.2`...):** correções pequenas, bugfixes e ajustes de UI.
+- **Minor (`0.11.0`, `0.12.0`...):** novos blocos relevantes de recursos ou novos módulos.
+- **Major (`1.0.0`):** paridade completa e estável.
 
 ---
 

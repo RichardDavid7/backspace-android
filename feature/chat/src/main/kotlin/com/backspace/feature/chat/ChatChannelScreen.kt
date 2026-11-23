@@ -66,6 +66,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -94,6 +95,7 @@ import com.backspace.core.model.GifItem
 import com.backspace.core.model.Message
 import com.backspace.core.model.PendingAttachmentPayload
 import com.backspace.core.model.StickerItem
+import com.backspace.core.model.StickerTokenParser
 import com.backspace.core.network.BackspaceRestClient
 import com.backspace.core.network.BackspaceWebSocketClient
 import kotlinx.coroutines.Dispatchers
@@ -228,6 +230,11 @@ fun ChatChannelScreen(
             attachUris(uris)
             remaining
         }
+    }
+
+    DisposableEffect(channelId) {
+        wsClient.setActiveOpenChannel(channelId)
+        onDispose { wsClient.setActiveOpenChannel(null) }
     }
 
     LaunchedEffect(channelId, isDm) {
@@ -647,7 +654,23 @@ fun ChatChannelScreen(
                             )
                         }
 
-                        if (msg.safeContent.isNotBlank()) {
+                        val stickerImgUrl = StickerTokenParser.extractImageUrl(msg.safeContent)
+                        if (stickerImgUrl != null) {
+                            Spacer(Modifier.height(6.dp))
+                            AsyncImage(
+                                model = ImageRequest.Builder(context)
+                                    .data(stickerImgUrl)
+                                    .addHeader("Authorization", "Bearer $jwtToken")
+                                    .crossfade(true)
+                                    .build(),
+                                contentDescription = "Sticker",
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier
+                                    .size(140.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable { fullscreenImageUrl = stickerImgUrl },
+                            )
+                        } else if (msg.safeContent.isNotBlank()) {
                             Spacer(Modifier.height(4.dp))
                             Text(
                                 text = if (msg.editedAt != null) "${msg.safeContent} (editado)" else msg.safeContent,
@@ -1183,6 +1206,7 @@ private fun MediaPickerDialog(
                                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                         row.forEach { st ->
                                             val stUrl = st.assetUrl(instanceUrl)
+                                            val stToken = st.sendToken(instanceUrl)
                                             AsyncImage(
                                                 model = ImageRequest.Builder(context)
                                                     .data(stUrl)
@@ -1196,7 +1220,7 @@ private fun MediaPickerDialog(
                                                     .height(76.dp)
                                                     .clip(RoundedCornerShape(8.dp))
                                                     .background(colors.bgBase)
-                                                    .clickable { onSendUrl(stUrl) },
+                                                    .clickable { onSendUrl(stToken) },
                                             )
                                         }
                                         repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }

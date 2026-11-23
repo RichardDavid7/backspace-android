@@ -19,6 +19,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -36,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -77,7 +80,7 @@ private fun BackspaceRootApp(container: AppContainer) {
     val scope = rememberCoroutineScope()
     val navController = rememberNavController()
     var session by remember { mutableStateOf(container.sessionStorage.load()) }
-    var homeTab by rememberSaveable { mutableIntStateOf(0) } // 0 = Espaços, 1 = DMs, 2 = Configurações
+    var homeTab by rememberSaveable { mutableIntStateOf(0) } // 0 = Mensagens (home), 1 = Espaços, 2 = Configurações
 
     val permissionsLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
@@ -131,8 +134,9 @@ private fun BackspaceRootApp(container: AppContainer) {
         composable("home") {
             val active = session ?: return@composable
             val colors = AetherTheme.colors
-            val myId = container.wsClient.snapshot.value.currentUser?.id
-            val currentUserLabel = container.wsClient.snapshot.value.currentUser?.label ?: "-"
+            val snap by container.wsClient.snapshot.collectAsStateWithLifecycle()
+            val myId = snap.currentUser?.id
+            val currentUserLabel = snap.currentUser?.label ?: "-"
 
             Scaffold(
                 containerColor = colors.bgBase,
@@ -141,14 +145,38 @@ private fun BackspaceRootApp(container: AppContainer) {
                         NavigationBarItem(
                             selected = homeTab == 0,
                             onClick = { homeTab = 0 },
-                            icon = { Icon(Icons.Default.Hub, contentDescription = null) },
-                            label = { Text(stringResource(R.string.spaces_title)) },
+                            icon = {
+                                BadgedBox(
+                                    badge = {
+                                        if (snap.totalUnreadDms > 0) {
+                                            Badge(containerColor = colors.accentPeach) {
+                                                Text("${snap.totalUnreadDms}")
+                                            }
+                                        }
+                                    },
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null)
+                                }
+                            },
+                            label = { Text(stringResource(R.string.dm_tab_label)) },
                         )
                         NavigationBarItem(
                             selected = homeTab == 1,
                             onClick = { homeTab = 1 },
-                            icon = { Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null) },
-                            label = { Text(stringResource(R.string.dm_tab_label)) },
+                            icon = {
+                                BadgedBox(
+                                    badge = {
+                                        if (snap.totalSpaceMentions > 0) {
+                                            Badge(containerColor = colors.accentPeach) {
+                                                Text("${snap.totalSpaceMentions}")
+                                            }
+                                        }
+                                    },
+                                ) {
+                                    Icon(Icons.Default.Hub, contentDescription = null)
+                                }
+                            },
+                            label = { Text(stringResource(R.string.spaces_title)) },
                         )
                         NavigationBarItem(
                             selected = homeTab == 2,
@@ -164,7 +192,26 @@ private fun BackspaceRootApp(container: AppContainer) {
                     .padding(innerPadding)
 
                 when (homeTab) {
-                    0 -> SpacesScreen(
+                    0 -> DmListScreen(
+                        instanceUrl = active.instanceUrl,
+                        jwtToken = active.token,
+                        restClient = container.restClient,
+                        wsClient = container.wsClient,
+                        title = stringResource(R.string.dm_title),
+                        conversationsTabLabel = stringResource(R.string.dm_tab_conversations),
+                        friendsTabLabel = stringResource(R.string.dm_tab_friends),
+                        addFriendPlaceholder = stringResource(R.string.friends_add_placeholder),
+                        pendingRequestsHeader = stringResource(R.string.friends_pending_requests),
+                        emptyText = stringResource(R.string.dm_empty),
+                        groupBadge = stringResource(R.string.dm_group_badge),
+                        onOpenDm = { dm ->
+                            val encoded = Uri.encode(dm.displayTitle(myId))
+                            navController.navigate("dm/${dm.id}/$encoded")
+                        },
+                        modifier = tabModifier,
+                    )
+
+                    1 -> SpacesScreen(
                         instanceUrl = active.instanceUrl,
                         jwtToken = active.token,
                         restClient = container.restClient,
@@ -206,30 +253,11 @@ private fun BackspaceRootApp(container: AppContainer) {
                         modifier = tabModifier,
                     )
 
-                    1 -> DmListScreen(
-                        instanceUrl = active.instanceUrl,
-                        jwtToken = active.token,
-                        restClient = container.restClient,
-                        wsClient = container.wsClient,
-                        title = stringResource(R.string.dm_title),
-                        conversationsTabLabel = stringResource(R.string.dm_tab_conversations),
-                        friendsTabLabel = stringResource(R.string.dm_tab_friends),
-                        addFriendPlaceholder = stringResource(R.string.friends_add_placeholder),
-                        pendingRequestsHeader = stringResource(R.string.friends_pending_requests),
-                        emptyText = stringResource(R.string.dm_empty),
-                        groupBadge = stringResource(R.string.dm_group_badge),
-                        onOpenDm = { dm ->
-                            val encoded = Uri.encode(dm.displayTitle(myId))
-                            navController.navigate("dm/${dm.id}/$encoded")
-                        },
-                        modifier = tabModifier,
-                    )
-
                     else -> SettingsScreen(
                         instanceUrl = active.instanceUrl,
                         jwtToken = active.token,
                         username = currentUserLabel,
-                        appVersion = "0.9.0-alpha",
+                        appVersion = "0.10.0-alpha",
                         restClient = container.restClient,
                         wsClient = container.wsClient,
                         voiceEngine = container.voiceEngine,
@@ -257,7 +285,7 @@ private fun BackspaceRootApp(container: AppContainer) {
                                 val repoSlug = context.getString(R.string.updater_repo_slug)
                                 val result = container.releaseUpdater.checkLatestRelease(
                                     repoSlug = repoSlug,
-                                    currentVersion = "0.9.0-alpha",
+                                    currentVersion = "0.10.0-alpha",
                                 )
                                 if (result != null && result.updateAvailable && result.downloadUrl.isNotBlank()) {
                                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(result.downloadUrl)))

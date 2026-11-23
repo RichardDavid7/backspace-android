@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -414,9 +415,10 @@ fun SpacesScreen(
             return
         }
 
-        // Lista horizontal de Espaços com ícone oficial de cada Espaço
+        // Lista horizontal de Espaços com ícone oficial + bolinha de menções
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(snapshot.spaces, key = { it.id }) { space ->
+                val spaceMentions = snapshot.mentionsForSpace(space)
                 FilterChip(
                     selected = space.id == selectedSpace?.id,
                     onClick = { selectedSpaceId = space.id },
@@ -426,6 +428,15 @@ fun SpacesScreen(
                             fallbackLabel = space.name,
                             size = 22.dp,
                         )
+                    },
+                    trailingIcon = if (spaceMentions > 0) {
+                        {
+                            Badge(containerColor = colors.accentPeach) {
+                                Text("$spaceMentions")
+                            }
+                        }
+                    } else {
+                        null
                     },
                     label = { Text(space.name) },
                 )
@@ -520,6 +531,7 @@ fun SpacesScreen(
                                         }
                                     }
                                 } else {
+                                    val channelMentions = snapshot.channelMentionCounts[ch.id] ?: 0
                                     AetherSurfaceCard(
                                         modifier = Modifier
                                             .padding(start = indent)
@@ -528,18 +540,29 @@ fun SpacesScreen(
                                                 onLongClick = { if (isSpaceAdmin) editingChannel = ch },
                                             ),
                                     ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(
-                                                imageVector = Icons.Default.Tag,
-                                                contentDescription = null,
-                                                tint = colors.textSecondary,
-                                            )
-                                            Spacer(Modifier.width(10.dp))
-                                            Text(
-                                                text = ch.name,
-                                                style = MaterialTheme.typography.titleMedium,
-                                                color = colors.textPrimary,
-                                            )
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Tag,
+                                                    contentDescription = null,
+                                                    tint = colors.textSecondary,
+                                                )
+                                                Spacer(Modifier.width(10.dp))
+                                                Text(
+                                                    text = ch.name,
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    color = colors.textPrimary,
+                                                )
+                                            }
+                                            if (channelMentions > 0) {
+                                                Badge(containerColor = colors.accentPeach) {
+                                                    Text("$channelMentions")
+                                                }
+                                            }
                                         }
                                     }
                                 }

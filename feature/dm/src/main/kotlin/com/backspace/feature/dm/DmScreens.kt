@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -205,46 +206,58 @@ fun DmListScreen(
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(snapshot.dmChannels, key = { it.id }) { dm ->
                         val other = dm.members.firstOrNull { it.id != myUserId }
+                        val unreadCount = snapshot.unreadDmCounts[dm.id] ?: 0
                         AetherSurfaceCard(
                             modifier = Modifier.clickable { onOpenDm(dm) },
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
                             ) {
-                                AetherAvatar(
-                                    imageUrl = dm.avatarUrl(instanceUrl, myUserId),
-                                    fallbackLabel = dm.displayTitle(myUserId),
-                                    size = 40.dp,
-                                    status = if (dm.isGroup) null else other?.status,
-                                )
-                                Spacer(Modifier.width(12.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        if (dm.isGroup) {
-                                            Icon(
-                                                imageVector = Icons.Default.Group,
-                                                contentDescription = null,
-                                                tint = colors.accentPrimary,
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    AetherAvatar(
+                                        imageUrl = dm.avatarUrl(instanceUrl, myUserId),
+                                        fallbackLabel = dm.displayTitle(myUserId),
+                                        size = 40.dp,
+                                        status = if (dm.isGroup) null else other?.status,
+                                    )
+                                    Spacer(Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (dm.isGroup) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Group,
+                                                    contentDescription = null,
+                                                    tint = colors.accentPrimary,
+                                                )
+                                                Spacer(Modifier.width(4.dp))
+                                            }
+                                            Text(
+                                                text = dm.displayTitle(myUserId),
+                                                style = MaterialTheme.typography.titleMedium,
+                                                color = colors.textPrimary,
                                             )
-                                            Spacer(Modifier.width(4.dp))
+                                        }
+                                        val sub = if (dm.isGroup) {
+                                            "$groupBadge · ${dm.members.size}"
+                                        } else {
+                                            other?.customStatus?.takeIf { it.isNotBlank() } ?: "@${other?.username.orEmpty()}"
                                         }
                                         Text(
-                                            text = dm.displayTitle(myUserId),
-                                            style = MaterialTheme.typography.titleMedium,
-                                            color = colors.textPrimary,
+                                            text = sub,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = colors.textSecondary,
                                         )
                                     }
-                                    val sub = if (dm.isGroup) {
-                                        "$groupBadge · ${dm.members.size}"
-                                    } else {
-                                        other?.customStatus?.takeIf { it.isNotBlank() } ?: "@${other?.username.orEmpty()}"
+                                }
+                                if (unreadCount > 0) {
+                                    Badge(containerColor = colors.accentPeach) {
+                                        Text("$unreadCount")
                                     }
-                                    Text(
-                                        text = sub,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = colors.textSecondary,
-                                    )
                                 }
                             }
                         }
