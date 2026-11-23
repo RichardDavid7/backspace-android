@@ -55,6 +55,10 @@
     <string name="dm_tab_label">Messages</string>
     <string name="dm_call_confirm_title">Start call?</string>
     <string name="dm_call_confirm_action">Call</string>
+    <string name="dm_tab_conversations">Chats</string>
+    <string name="dm_tab_friends">Friends</string>
+    <string name="friends_add_placeholder">Add friend by username...</string>
+    <string name="friends_pending_requests">Pending requests</string>
     <string name="settings_tab_user">User</string>
     <string name="settings_tab_instance">Instance</string>
     <string name="settings_instance_general">General &amp; Registration</string>

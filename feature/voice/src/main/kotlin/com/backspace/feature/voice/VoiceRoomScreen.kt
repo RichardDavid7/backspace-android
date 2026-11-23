@@ -29,6 +29,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CallEnd
+import androidx.compose.material.icons.filled.Cameraswitch
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.HeadsetOff
@@ -448,6 +449,14 @@ fun VoiceRoomScreen(
                         bg = if (state.isCameraOn) colors.accentMint.copy(alpha = 0.16f) else colors.bgElevated,
                         onClick = { voiceEngine.toggleCamera() },
                     )
+                    if (state.isCameraOn) {
+                        DockControlButton(
+                            icon = Icons.Default.Cameraswitch,
+                            tint = colors.accentSky,
+                            bg = colors.bgElevated,
+                            onClick = { voiceEngine.switchCamera() },
+                        )
+                    }
                     DockControlButton(
                         icon = if (state.isScreenSharing) Icons.Default.StopScreenShare else Icons.Default.ScreenShare,
                         tint = if (state.isScreenSharing) colors.accentSky else colors.textPrimary,
@@ -694,12 +703,14 @@ private fun LiveKitVideoBox(
         factory = { ctx ->
             TextureViewRenderer(ctx).also { renderer ->
                 voiceEngine.initVideoRenderer(renderer)
+                renderer.setEnableHardwareScaler(true)
                 renderer.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
                 tile.videoTrack.addRenderer(renderer)
                 rendererHolder[0] = renderer
             }
         },
         update = { renderer ->
+            renderer.setEnableHardwareScaler(true)
             renderer.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
             if (rendererHolder[0] !== renderer) {
                 rendererHolder[0] = renderer

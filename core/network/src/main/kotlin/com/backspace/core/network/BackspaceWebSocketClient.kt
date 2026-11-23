@@ -754,6 +754,25 @@ class BackspaceWebSocketClient(
         _snapshot.update { it.copy(streamingLimits = limits) }
     }
 
+    fun refreshSpaceDetail(spaceId: String) {
+        val url = activeInstanceUrl ?: return
+        val token = activeToken ?: return
+        scope.launch {
+            runCatching { restClient.getSpaceDetail(url, token, spaceId) }
+                .onSuccess { detailed ->
+                    _snapshot.update { cur ->
+                        val exists = cur.spaces.any { it.id == detailed.id }
+                        val updated = if (exists) {
+                            cur.spaces.map { if (it.id == detailed.id) detailed else it }
+                        } else {
+                            cur.spaces + detailed
+                        }
+                        cur.copy(spaces = updated)
+                    }
+                }
+        }
+    }
+
     private fun handleDmMessageCreated(obj: JsonObject) {
         val msgElem = obj["message"] ?: return
         val dmMsg = runCatching { json.decodeFromJsonElement<DmMessage>(msgElem) }.getOrNull() ?: return

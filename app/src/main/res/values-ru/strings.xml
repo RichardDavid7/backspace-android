@@ -55,6 +55,10 @@
     <string name="dm_tab_label">Сообщения</string>
     <string name="dm_call_confirm_title">Начать звонок?</string>
     <string name="dm_call_confirm_action">Позвонить</string>
+    <string name="dm_tab_conversations">Чаты</string>
+    <string name="dm_tab_friends">Друзья</string>
+    <string name="friends_add_placeholder">Добавить друга по имени...</string>
+    <string name="friends_pending_requests">Входящие заявки</string>
     <string name="settings_tab_user">Пользователь</string>
     <string name="settings_tab_instance">Инстанс</string>
     <string name="settings_instance_general">Общие и регистрация</string>

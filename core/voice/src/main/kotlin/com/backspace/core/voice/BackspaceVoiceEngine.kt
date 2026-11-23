@@ -26,6 +26,7 @@ import io.livekit.android.room.Room
 import io.livekit.android.room.participant.AudioTrackPublishDefaults
 import io.livekit.android.room.track.DataPublishReliability
 import io.livekit.android.room.track.LocalAudioTrackOptions
+import io.livekit.android.room.track.LocalVideoTrack
 import io.livekit.android.room.track.RemoteAudioTrack
 import io.livekit.android.room.track.Track
 import io.livekit.android.room.track.VideoTrack
@@ -351,6 +352,16 @@ class BackspaceVoiceEngine(
             }.onFailure { err ->
                 _state.update { it.copy(errorMessage = err.message) }
             }
+        }
+    }
+
+    fun switchCamera() {
+        scope.launch {
+            val lkRoom = room ?: return@launch
+            val camTrack = lkRoom.localParticipant.videoTrackPublications
+                .firstOrNull { (pub, _) -> pub.source == Track.Source.CAMERA }
+                ?.second as? LocalVideoTrack
+            runCatching { camTrack?.switchCamera() }
         }
     }
 

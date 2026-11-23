@@ -50,9 +50,11 @@ import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -83,8 +85,10 @@ import coil.request.ImageRequest
 import com.backspace.core.designsystem.AetherAvatar
 import com.backspace.core.designsystem.AetherSurfaceCard
 import com.backspace.core.designsystem.AetherTheme
+import com.backspace.core.model.GifItem
 import com.backspace.core.model.Message
 import com.backspace.core.model.PendingAttachmentPayload
+import com.backspace.core.model.StickerItem
 import com.backspace.core.network.BackspaceRestClient
 import com.backspace.core.network.BackspaceWebSocketClient
 import kotlinx.coroutines.Dispatchers
@@ -96,6 +100,13 @@ import java.util.Locale
 import java.util.UUID
 
 private val QUICK_EMOJIS = listOf("👍", "❤️", "😂", "😮", "😢", "🔥")
+private val PICKER_EMOJIS = listOf(
+    "😀", "😂", "🤣", "😊", "😍", "🥰", "😎", "🤩",
+    "🤔", "😮", "😢", "😭", "😡", "🤯", "🥳", "😴",
+    "👍", "👎", "👏", "🙌", "🤝", "🙏", "💪", "✌️",
+    "❤️", "🔥", "⭐", "⚡", "🎉", "💯", "🎮", "🎧",
+    "🚀", "👀", "💀", "🤡", "🫡", "🫶", "✅", "❌",
+)
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
@@ -148,6 +159,7 @@ fun ChatChannelScreen(
     var selectedMessageForActions by remember { mutableStateOf<Message?>(null) }
     var fullscreenImageUrl by remember { mutableStateOf<String?>(null) }
     var showCallConfirmDialog by remember { mutableStateOf(false) }
+    var showMediaPicker by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf<String?>(null) }
     val pendingAttachments = remember { mutableStateListOf<PendingAttachmentPayload>() }
 
@@ -265,6 +277,29 @@ fun ChatChannelScreen(
             }
         }
         return
+    }
+
+    if (showMediaPicker) {
+        MediaPickerDialog(
+            instanceUrl = instanceUrl,
+            jwtToken = jwtToken,
+            restClient = restClient,
+            onInsertEmoji = { emoji ->
+                draft += emoji
+                showMediaPicker = false
+            },
+            onSendUrl = { mediaUrl ->
+                showMediaPicker = false
+                wsClient.enqueueOrSendMessage(
+                    channelId = channelId,
+                    content = mediaUrl,
+                    replyToId = replyingTo?.id,
+                    isDm = isDm,
+                )
+                replyingTo = null
+            },
+            onDismiss = { showMediaPicker = false },
+        )
     }
 
     if (showCallConfirmDialog && onStartCall != null) {
@@ -729,6 +764,13 @@ fun ChatChannelScreen(
                     tint = colors.textSecondary,
                 )
             }
+            IconButton(onClick = { showMediaPicker = true }) {
+                Icon(
+                    imageVector = Icons.Default.EmojiEmotions,
+                    contentDescription = "Emoji, GIF, Stickers",
+                    tint = colors.textSecondary,
+                )
+            }
             OutlinedTextField(
                 value = draft,
                 onValueChange = { draft = it },
@@ -850,6 +892,160 @@ private fun formatFileSize(bytes: Long): String = when {
     bytes >= 1_048_576L -> String.format(Locale.getDefault(), "%.1f MB", bytes / 1_048_576.0)
     bytes >= 1_024L -> String.format(Locale.getDefault(), "%.1f KB", bytes / 1_024.0)
     else -> "$bytes B"
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun MediaPickerDialog(
+    instanceUrl: String,
+    jwtToken: String,
+    restClient: BackspaceRestClient,
+    onInsertEmoji: (String) -> Unit,
+    onSendUrl: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val colors = AetherTheme.colors
+    val context = LocalContext.current
+    var tab by remember { mutableStateOf(0) } // 0 = Emoji, 1 = GIF, 2 = Stickers
+    var gifQuery by remember { mutableStateOf("") }
+    var gifs by remember { mutableStateOf<List<GifItem>>(emptyList()) }
+    var stickers by remember { mutableStateOf<List<StickerItem>>(emptyList()) }
+    var statusText by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(tab, gifQuery) {
+        statusText = null
+        if (tab == 1) {
+            runCatching {
+                if (gifQuery.isBlank()) {
+                    restClient.getTrendingGifs(instanceUrl, jwtToken)
+                } else {
+                    restClient.searchGifs(instanceUrl, jwtToken, gifQuery)
+                }
+            }.onSuccess { gifs = it }.onFailure { statusText = it.message }
+        } else if (tab == 2 && stickers.isEmpty()) {
+            runCatching { restClient.getStickers(instanceUrl, jwtToken) }
+                .onSuccess { stickers = it }
+                .onFailure { statusText = it.message }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = colors.bgChannel,
+        title = {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = tab == 0, onClick = { tab = 0 }, label = { Text("Emoji") })
+                FilterChip(selected = tab == 1, onClick = { tab = 1 }, label = { Text("GIF") })
+                FilterChip(selected = tab == 2, onClick = { tab = 2 }, label = { Text("Stickers") })
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 340.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (!statusText.isNullOrBlank()) {
+                    Text(statusText!!, color = colors.accentPeach, style = MaterialTheme.typography.bodySmall)
+                }
+                when (tab) {
+                    0 -> {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            PICKER_EMOJIS.forEach { emoji ->
+                                Text(
+                                    text = emoji,
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    modifier = Modifier
+                                        .clickable { onInsertEmoji(emoji) }
+                                        .padding(4.dp),
+                                )
+                            }
+                        }
+                    }
+
+                    1 -> {
+                        OutlinedTextField(
+                            value = gifQuery,
+                            onValueChange = { gifQuery = it },
+                            placeholder = { Text("GIF...") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        LazyColumn(
+                            modifier = Modifier.heightIn(max = 240.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            items(gifs.chunked(2)) { pair ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    pair.forEach { gif ->
+                                        AsyncImage(
+                                            model = ImageRequest.Builder(context)
+                                                .data(gif.bestPreview)
+                                                .crossfade(true)
+                                                .build(),
+                                            contentDescription = gif.title,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(92.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(colors.bgBase)
+                                                .clickable { if (gif.url.isNotBlank()) onSendUrl(gif.url) },
+                                        )
+                                    }
+                                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                                }
+                            }
+                        }
+                    }
+
+                    else -> {
+                        if (stickers.isEmpty()) {
+                            Text("—", color = colors.textSecondary)
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.heightIn(max = 260.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                items(stickers.chunked(3)) { row ->
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        row.forEach { st ->
+                                            val stUrl = st.assetUrl(instanceUrl)
+                                            AsyncImage(
+                                                model = ImageRequest.Builder(context)
+                                                    .data(stUrl)
+                                                    .addHeader("Authorization", "Bearer $jwtToken")
+                                                    .crossfade(true)
+                                                    .build(),
+                                                contentDescription = st.name,
+                                                contentScale = ContentScale.Fit,
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .height(76.dp)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(colors.bgBase)
+                                                    .clickable { onSendUrl(stUrl) },
+                                            )
+                                        }
+                                        repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("OK", color = colors.textSecondary)
+            }
+        },
+    )
 }
 
 private suspend fun readUriPayload(

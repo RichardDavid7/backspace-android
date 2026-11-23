@@ -1,17 +1,29 @@
 package com.backspace.core.network
 
 import android.util.Base64
+import com.backspace.core.model.Channel
+import com.backspace.core.model.ChannelCategory
 import com.backspace.core.model.DmChannel
 import com.backspace.core.model.DmMessage
+import com.backspace.core.model.ExploreSpaceItem
+import com.backspace.core.model.ExploreSpacesResponse
+import com.backspace.core.model.FriendItem
+import com.backspace.core.model.FriendRequestItem
+import com.backspace.core.model.GifItem
+import com.backspace.core.model.GifSearchResponse
 import com.backspace.core.model.InstanceAdminSettings
 import com.backspace.core.model.InstanceInfo
 import com.backspace.core.model.InstanceStreamingLimits
+import com.backspace.core.model.InviteCodeExtractor
 import com.backspace.core.model.LiveKitTokenResponse
 import com.backspace.core.model.Message
 import com.backspace.core.model.MessageAttachment
 import com.backspace.core.model.SoundboardListResponse
 import com.backspace.core.model.Space
+import com.backspace.core.model.SpaceInviteResponse
+import com.backspace.core.model.StickerItem
 import com.backspace.core.model.User
+import java.net.URLEncoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -37,6 +49,24 @@ data class LiveKitTokenRequest(
 
 @Serializable
 data class CreateDmRequest(val userId: String)
+
+@Serializable
+data class CreateSpaceRequest(val name: String, val description: String? = null)
+
+@Serializable
+data class JoinSpaceRequest(val inviteCode: String)
+
+@Serializable
+data class CreateChannelRequest(val name: String, val type: String = "text")
+
+@Serializable
+data class CreateCategoryRequest(val name: String)
+
+@Serializable
+data class SendFriendRequestBody(val username: String)
+
+@Serializable
+data class RespondFriendRequestBody(val action: String)
 
 @Serializable
 data class UpdateSpaceAdminRequest(
@@ -247,6 +277,171 @@ class BackspaceRestClient(
             body = json.encodeToString(InstanceStreamingLimits.serializer(), limits),
             token = token,
         )
+    }
+
+    // ── GIFs & Stickers ──
+    suspend fun getTrendingGifs(instanceUrl: String, token: String, limit: Int = 24): List<GifItem> {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executeGet<GifSearchResponse>("$base/api/gif/trending?limit=$limit", token = token).results
+    }
+
+    suspend fun searchGifs(instanceUrl: String, token: String, query: String, limit: Int = 24): List<GifItem> {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val q = URLEncoder.encode(query.trim(), "UTF-8")
+        return executeGet<GifSearchResponse>("$base/api/gif/search?q=$q&limit=$limit", token = token).results
+    }
+
+    suspend fun getStickers(instanceUrl: String, token: String): List<StickerItem> {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executeGet("$base/api/stickers", token = token)
+    }
+
+    // ── Espaços: Criar, Entrar por Convite, Descobrir, Gerar Convite, Canais/Categorias ──
+    suspend fun createSpace(instanceUrl: String, token: String, name: String, description: String?): Space {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executePost(
+            url = "$base/api/spaces",
+            body = json.encodeToString(
+                CreateSpaceRequest.serializer(),
+                CreateSpaceRequest(name = name, description = description?.ifBlank { null }),
+            ),
+            token = token,
+        )
+    }
+
+    suspend fun joinSpaceByInvite(instanceUrl: String, token: String, rawInvite: String): Space {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val code = InviteCodeExtractor.extract(rawInvite)
+        return executePost(
+            url = "$base/api/spaces/join",
+            body = json.encodeToString(JoinSpaceRequest.serializer(), JoinSpaceRequest(inviteCode = code)),
+            token = token,
+        )
+    }
+
+    suspend fun generateSpaceInvite(instanceUrl: String, token: String, spaceId: String): String {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executePost<SpaceInviteResponse>(
+            url = "$base/api/spaces/$spaceId/invite",
+            body = "{}",
+            token = token,
+        ).inviteCode
+    }
+
+    suspend fun exploreSpaces(instanceUrl: String, token: String, query: String = ""): List<ExploreSpaceItem> {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val q = URLEncoder.encode(query.trim(), "UTF-8")
+        return executeGet<ExploreSpacesResponse>("$base/api/spaces/explore?q=$q&limit=30", token = token).spaces
+    }
+
+    suspend fun publicJoinSpace(instanceUrl: String, token: String, spaceId: String) {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        withContext(Dispatchers.IO) {
+            val req = Request.Builder()
+                .url("$base/api/spaces/$spaceId/public-join")
+                .header("Authorization", "Bearer $token")
+                .post("{}".toRequestBody(jsonMediaType))
+                .build()
+            okHttpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    throw BackspaceApiException(resp.code, null, "Join failed (HTTP ${resp.code})")
+                }
+            }
+        }
+    }
+
+    suspend fun createChannel(
+        instanceUrl: String,
+        token: String,
+        spaceId: String,
+        name: String,
+        type: String,
+    ): Channel {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executePost(
+            url = "$base/api/spaces/$spaceId/channels",
+            body = json.encodeToString(CreateChannelRequest.serializer(), CreateChannelRequest(name, type)),
+            token = token,
+        )
+    }
+
+    suspend fun createCategory(
+        instanceUrl: String,
+        token: String,
+        spaceId: String,
+        name: String,
+    ): ChannelCategory {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executePost(
+            url = "$base/api/spaces/$spaceId/categories",
+            body = json.encodeToString(CreateCategoryRequest.serializer(), CreateCategoryRequest(name)),
+            token = token,
+        )
+    }
+
+    suspend fun getSpaces(instanceUrl: String, token: String): List<Space> {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executeGet("$base/api/spaces", token = token)
+    }
+
+    suspend fun getSpaceDetail(instanceUrl: String, token: String, spaceId: String): Space {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executeGet("$base/api/spaces/$spaceId", token = token)
+    }
+
+    // ── Amigos (Social) ──
+    suspend fun getFriends(instanceUrl: String, token: String): List<FriendItem> {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executeGet("$base/api/social/friends", token = token)
+    }
+
+    suspend fun getFriendRequests(instanceUrl: String, token: String): List<FriendRequestItem> {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executeGet("$base/api/social/requests", token = token)
+    }
+
+    suspend fun sendFriendRequest(instanceUrl: String, token: String, username: String) {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        withContext(Dispatchers.IO) {
+            val req = Request.Builder()
+                .url("$base/api/social/requests")
+                .header("Authorization", "Bearer $token")
+                .post(
+                    json.encodeToString(
+                        SendFriendRequestBody.serializer(),
+                        SendFriendRequestBody(username.trim()),
+                    ).toRequestBody(jsonMediaType),
+                )
+                .build()
+            okHttpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    val raw = resp.body?.string().orEmpty()
+                    val parsed = runCatching { json.decodeFromString<ApiErrorResponse>(raw) }.getOrNull()
+                    throw BackspaceApiException(resp.code, parsed?.code, parsed?.error ?: "HTTP ${resp.code}")
+                }
+            }
+        }
+    }
+
+    suspend fun respondFriendRequest(instanceUrl: String, token: String, requestId: String, accept: Boolean) {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        withContext(Dispatchers.IO) {
+            val req = Request.Builder()
+                .url("$base/api/social/requests/$requestId")
+                .header("Authorization", "Bearer $token")
+                .patch(
+                    json.encodeToString(
+                        RespondFriendRequestBody.serializer(),
+                        RespondFriendRequestBody(if (accept) "accept" else "decline"),
+                    ).toRequestBody(jsonMediaType),
+                )
+                .build()
+            okHttpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    throw BackspaceApiException(resp.code, null, "HTTP ${resp.code}")
+                }
+            }
+        }
     }
 
     suspend fun getChannelMessages(

@@ -55,6 +55,10 @@
     <string name="dm_tab_label">消息</string>
     <string name="dm_call_confirm_title">发起通话？</string>
     <string name="dm_call_confirm_action">呼叫</string>
+    <string name="dm_tab_conversations">聊天</string>
+    <string name="dm_tab_friends">好友</string>
+    <string name="friends_add_placeholder">输入用户名添加好友...</string>
+    <string name="friends_pending_requests">待处理请求</string>
     <string name="settings_tab_user">用户</string>
     <string name="settings_tab_instance">实例</string>
     <string name="settings_instance_general">常规与注册</string>

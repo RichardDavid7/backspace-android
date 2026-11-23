@@ -208,8 +208,14 @@ private fun BackspaceRootApp(container: AppContainer) {
 
                     1 -> DmListScreen(
                         instanceUrl = active.instanceUrl,
+                        jwtToken = active.token,
+                        restClient = container.restClient,
                         wsClient = container.wsClient,
                         title = stringResource(R.string.dm_title),
+                        conversationsTabLabel = stringResource(R.string.dm_tab_conversations),
+                        friendsTabLabel = stringResource(R.string.dm_tab_friends),
+                        addFriendPlaceholder = stringResource(R.string.friends_add_placeholder),
+                        pendingRequestsHeader = stringResource(R.string.friends_pending_requests),
                         emptyText = stringResource(R.string.dm_empty),
                         groupBadge = stringResource(R.string.dm_group_badge),
                         onOpenDm = { dm ->
@@ -223,7 +229,7 @@ private fun BackspaceRootApp(container: AppContainer) {
                         instanceUrl = active.instanceUrl,
                         jwtToken = active.token,
                         username = currentUserLabel,
-                        appVersion = "0.7.0-alpha",
+                        appVersion = "0.8.0-alpha",
                         restClient = container.restClient,
                         wsClient = container.wsClient,
                         voiceEngine = container.voiceEngine,
@@ -251,7 +257,7 @@ private fun BackspaceRootApp(container: AppContainer) {
                                 val repoSlug = context.getString(R.string.updater_repo_slug)
                                 val result = container.releaseUpdater.checkLatestRelease(
                                     repoSlug = repoSlug,
-                                    currentVersion = "0.7.0-alpha",
+                                    currentVersion = "0.8.0-alpha",
                                 )
                                 if (result != null && result.updateAvailable && result.downloadUrl.isNotBlank()) {
                                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(result.downloadUrl)))

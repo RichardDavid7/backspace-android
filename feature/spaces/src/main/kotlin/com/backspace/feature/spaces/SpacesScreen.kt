@@ -18,26 +18,28 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Group
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,6 +48,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.backspace.core.designsystem.AetherAvatar
@@ -57,6 +61,7 @@ import com.backspace.core.model.Channel
 import com.backspace.core.model.ChannelCategory
 import com.backspace.core.model.ChannelTreeBuilder
 import com.backspace.core.model.ChosenUserStatus
+import com.backspace.core.model.ExploreSpaceItem
 import com.backspace.core.model.MemberWithUser
 import com.backspace.core.model.PermissionBits
 import com.backspace.core.model.Space
@@ -108,6 +113,7 @@ fun SpacesScreen(
     var showMembersDialog by remember { mutableStateOf(false) }
     var selectedProfileMember by remember { mutableStateOf<MemberWithUser?>(null) }
     var showSpaceAdminDialog by remember { mutableStateOf(false) }
+    var showAddOrExploreDialog by remember { mutableStateOf(false) }
     val collapsedCategories = remember { mutableStateMapOf<String, Boolean>() }
 
     val selectedSpace = snapshot.spaces.firstOrNull { it.id == selectedSpaceId }
@@ -172,8 +178,26 @@ fun SpacesScreen(
         )
     }
 
+    if (showAddOrExploreDialog) {
+        AddOrExploreSpaceDialog(
+            instanceUrl = instanceUrl,
+            jwtToken = jwtToken,
+            restClient = restClient,
+            wsClient = wsClient,
+            onSpaceJoined = { spaceId ->
+                selectedSpaceId = spaceId
+                showAddOrExploreDialog = false
+            },
+            onDismiss = { showAddOrExploreDialog = false },
+        )
+    }
+
     if (showSpaceAdminDialog && selectedSpace != null) {
         SpaceAdminDialog(
+            instanceUrl = instanceUrl,
+            jwtToken = jwtToken,
+            restClient = restClient,
+            wsClient = wsClient,
             space = selectedSpace,
             title = spaceAdminTitle,
             saveLabel = saveLabel,
@@ -184,6 +208,7 @@ fun SpacesScreen(
                 scope.launch {
                     runCatching {
                         restClient.updateSpaceSettings(instanceUrl, jwtToken, selectedSpace.id, req)
+                        wsClient.refreshSpaceDetail(selectedSpace.id)
                     }
                 }
             },
@@ -233,6 +258,13 @@ fun SpacesScreen(
                 }
             }
             Row {
+                IconButton(onClick = { showAddOrExploreDialog = true }) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Create / Join / Explore Space",
+                        tint = colors.accentPrimary,
+                    )
+                }
                 if (selectedSpace != null) {
                     IconButton(onClick = { showMembersDialog = true }) {
                         Icon(
@@ -558,7 +590,175 @@ private fun UserProfileDialog(
 }
 
 @Composable
+private fun AddOrExploreSpaceDialog(
+    instanceUrl: String,
+    jwtToken: String,
+    restClient: BackspaceRestClient,
+    wsClient: BackspaceWebSocketClient,
+    onSpaceJoined: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val colors = AetherTheme.colors
+    val scope = rememberCoroutineScope()
+    var tab by remember { mutableIntStateOf(0) } // 0 = Criar, 1 = Convite, 2 = Descobrir
+    var newSpaceName by remember { mutableStateOf("") }
+    var newSpaceDesc by remember { mutableStateOf("") }
+    var inviteInput by remember { mutableStateOf("") }
+    var exploreQuery by remember { mutableStateOf("") }
+    var exploreList by remember { mutableStateOf<List<ExploreSpaceItem>>(emptyList()) }
+    var statusMsg by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(tab, exploreQuery) {
+        if (tab == 2) {
+            runCatching { restClient.exploreSpaces(instanceUrl, jwtToken, exploreQuery) }
+                .onSuccess { exploreList = it }
+                .onFailure { statusMsg = it.message }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = colors.bgChannel,
+        title = {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = tab == 0, onClick = { tab = 0 }, label = { Text("Criar") })
+                FilterChip(selected = tab == 1, onClick = { tab = 1 }, label = { Text("Convite") })
+                FilterChip(selected = tab == 2, onClick = { tab = 2 }, label = { Text("Descobrir") })
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (!statusMsg.isNullOrBlank()) {
+                    Text(statusMsg!!, color = colors.accentPeach, style = MaterialTheme.typography.bodySmall)
+                }
+                when (tab) {
+                    0 -> {
+                        OutlinedTextField(
+                            value = newSpaceName,
+                            onValueChange = { newSpaceName = it },
+                            label = { Text("Nome do Espaço") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            value = newSpaceDesc,
+                            onValueChange = { newSpaceDesc = it },
+                            label = { Text("Descrição") },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        AetherPrimaryButton(
+                            text = "Criar Espaço",
+                            enabled = newSpaceName.isNotBlank(),
+                            onClick = {
+                                scope.launch {
+                                    statusMsg = null
+                                    runCatching {
+                                        val created = restClient.createSpace(instanceUrl, jwtToken, newSpaceName.trim(), newSpaceDesc)
+                                        wsClient.refreshSpaceDetail(created.id)
+                                        created.id
+                                    }.onSuccess(onSpaceJoined)
+                                        .onFailure { statusMsg = it.message }
+                                }
+                            },
+                        )
+                    }
+
+                    1 -> {
+                        OutlinedTextField(
+                            value = inviteInput,
+                            onValueChange = { inviteInput = it },
+                            label = { Text("Link ou código de convite") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        AetherPrimaryButton(
+                            text = "Entrar no Espaço",
+                            enabled = inviteInput.isNotBlank(),
+                            onClick = {
+                                scope.launch {
+                                    statusMsg = null
+                                    runCatching {
+                                        val joined = restClient.joinSpaceByInvite(instanceUrl, jwtToken, inviteInput)
+                                        wsClient.refreshSpaceDetail(joined.id)
+                                        joined.id
+                                    }.onSuccess(onSpaceJoined)
+                                        .onFailure { statusMsg = it.message }
+                                }
+                            },
+                        )
+                    }
+
+                    else -> {
+                        OutlinedTextField(
+                            value = exploreQuery,
+                            onValueChange = { exploreQuery = it },
+                            placeholder = { Text("Buscar Espaços...") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        LazyColumn(
+                            modifier = Modifier.heightIn(max = 260.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            items(exploreList, key = { it.id }) { item ->
+                                AetherSurfaceCard {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.weight(1f),
+                                        ) {
+                                            AetherAvatar(
+                                                imageUrl = item.iconUrl(instanceUrl),
+                                                fallbackLabel = item.name,
+                                                size = 32.dp,
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                            Column {
+                                                Text(item.name, color = colors.textPrimary, style = MaterialTheme.typography.titleSmall)
+                                                Text("${item.memberCount} membros", color = colors.textSecondary, style = MaterialTheme.typography.labelSmall)
+                                            }
+                                        }
+                                        if (!item.isMember) {
+                                            TextButton(
+                                                onClick = {
+                                                    scope.launch {
+                                                        runCatching {
+                                                            restClient.publicJoinSpace(instanceUrl, jwtToken, item.id)
+                                                            wsClient.refreshSpaceDetail(item.id)
+                                                        }.onSuccess { onSpaceJoined(item.id) }
+                                                            .onFailure { statusMsg = it.message }
+                                                    }
+                                                },
+                                            ) {
+                                                Text("Entrar", color = colors.accentMint)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("OK", color = colors.textSecondary)
+            }
+        },
+    )
+}
+
+@Composable
 private fun SpaceAdminDialog(
+    instanceUrl: String,
+    jwtToken: String,
+    restClient: BackspaceRestClient,
+    wsClient: BackspaceWebSocketClient,
     space: Space,
     title: String,
     saveLabel: String,
@@ -567,8 +767,16 @@ private fun SpaceAdminDialog(
     onSave: (UpdateSpaceAdminRequest) -> Unit,
 ) {
     val colors = AetherTheme.colors
+    val scope = rememberCoroutineScope()
+    val clipboard = LocalClipboardManager.current
+    var tab by remember { mutableIntStateOf(0) } // 0 = Geral, 1 = Canais/Convite, 2 = Opus
     var name by remember { mutableStateOf(space.name) }
     var description by remember { mutableStateOf(space.description.orEmpty()) }
+    var newChannelName by remember { mutableStateOf("") }
+    var newChannelType by remember { mutableStateOf("text") }
+    var newCategoryName by remember { mutableStateOf("") }
+    var generatedInvite by remember { mutableStateOf<String?>(null) }
+    var actionFeedback by remember { mutableStateOf<String?>(null) }
     var bitrate by remember { mutableStateOf((space.audioBitrateKbps ?: 64).toFloat()) }
     var maxBitrate by remember { mutableStateOf((space.maxAudioBitrateKbps ?: 256).toFloat()) }
     var allowMusic by remember { mutableStateOf(space.allowMusicMode ?: true) }
@@ -577,41 +785,142 @@ private fun SpaceAdminDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = colors.bgChannel,
-        title = { Text("$title · ${space.name}", color = colors.textPrimary) },
+        title = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("$title · ${space.name}", color = colors.textPrimary, style = MaterialTheme.typography.titleMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(selected = tab == 0, onClick = { tab = 0 }, label = { Text("Geral") })
+                    FilterChip(selected = tab == 1, onClick = { tab = 1 }, label = { Text("Canais") })
+                    FilterChip(selected = tab == 2, onClick = { tab = 2 }, label = { Text("Opus") })
+                }
+            }
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Description") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Text("Opus default: ${bitrate.toInt()} kbps", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
-                AetherPurpleSlider(value = bitrate, onValueChange = { bitrate = it }, valueRange = 8f..512f)
-                Text("Opus max: ${maxBitrate.toInt()} kbps", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
-                AetherPurpleSlider(value = maxBitrate, onValueChange = { maxBitrate = it }, valueRange = 8f..512f)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text("Music mode", color = colors.textPrimary)
-                    Switch(checked = allowMusic, onCheckedChange = { allowMusic = it })
+                if (!actionFeedback.isNullOrBlank()) {
+                    Text(actionFeedback!!, color = colors.accentMint, style = MaterialTheme.typography.bodySmall)
                 }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text("Stereo audio", color = colors.textPrimary)
-                    Switch(checked = allowStereo, onCheckedChange = { allowStereo = it })
+                when (tab) {
+                    0 -> {
+                        OutlinedTextField(
+                            value = name,
+                            onValueChange = { name = it },
+                            label = { Text("Nome") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            value = description,
+                            onValueChange = { description = it },
+                            label = { Text("Descrição") },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedButton(
+                            onClick = {
+                                scope.launch {
+                                    runCatching { restClient.generateSpaceInvite(instanceUrl, jwtToken, space.id) }
+                                        .onSuccess { code ->
+                                            val link = "${instanceUrl.trimEnd('/')}/invite/$code"
+                                            generatedInvite = link
+                                            clipboard.setText(AnnotatedString(link))
+                                            actionFeedback = "Link copiado: $link"
+                                        }
+                                        .onFailure { actionFeedback = it.message }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("Gerar e copiar link de convite", color = colors.accentSky)
+                        }
+                        if (!generatedInvite.isNullOrBlank()) {
+                            Text(generatedInvite!!, color = colors.textSecondary, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+
+                    1 -> {
+                        OutlinedTextField(
+                            value = newChannelName,
+                            onValueChange = { newChannelName = it },
+                            label = { Text("Novo canal") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FilterChip(
+                                selected = newChannelType == "text",
+                                onClick = { newChannelType = "text" },
+                                label = { Text("# Texto") },
+                            )
+                            FilterChip(
+                                selected = newChannelType == "voice",
+                                onClick = { newChannelType = "voice" },
+                                label = { Text("🔊 Voz") },
+                            )
+                        }
+                        AetherPrimaryButton(
+                            text = "Criar canal",
+                            enabled = newChannelName.isNotBlank(),
+                            onClick = {
+                                scope.launch {
+                                    runCatching {
+                                        restClient.createChannel(instanceUrl, jwtToken, space.id, newChannelName.trim(), newChannelType)
+                                        wsClient.refreshSpaceDetail(space.id)
+                                    }.onSuccess {
+                                        newChannelName = ""
+                                        actionFeedback = "Canal criado!"
+                                    }.onFailure { actionFeedback = it.message }
+                                }
+                            },
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = newCategoryName,
+                            onValueChange = { newCategoryName = it },
+                            label = { Text("Nova categoria") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedButton(
+                            enabled = newCategoryName.isNotBlank(),
+                            onClick = {
+                                scope.launch {
+                                    runCatching {
+                                        restClient.createCategory(instanceUrl, jwtToken, space.id, newCategoryName.trim())
+                                        wsClient.refreshSpaceDetail(space.id)
+                                    }.onSuccess {
+                                        newCategoryName = ""
+                                        actionFeedback = "Categoria criada!"
+                                    }.onFailure { actionFeedback = it.message }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("Criar categoria", color = colors.accentPrimary)
+                        }
+                    }
+
+                    else -> {
+                        Text("Opus default: ${bitrate.toInt()} kbps", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
+                        AetherPurpleSlider(value = bitrate, onValueChange = { bitrate = it }, valueRange = 8f..512f)
+                        Text("Opus max: ${maxBitrate.toInt()} kbps", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
+                        AetherPurpleSlider(value = maxBitrate, onValueChange = { maxBitrate = it }, valueRange = 8f..512f)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text("Music mode", color = colors.textPrimary)
+                            Switch(checked = allowMusic, onCheckedChange = { allowMusic = it })
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text("Stereo audio", color = colors.textPrimary)
+                            Switch(checked = allowStereo, onCheckedChange = { allowStereo = it })
+                        }
+                    }
                 }
             }
         },
