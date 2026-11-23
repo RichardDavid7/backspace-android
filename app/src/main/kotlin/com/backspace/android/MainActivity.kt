@@ -284,7 +284,7 @@ private fun BackspaceRootApp(container: AppContainer) {
                         instanceUrl = active.instanceUrl,
                         jwtToken = active.token,
                         username = currentUserLabel,
-                        appVersion = "0.11.0-alpha",
+                        appVersion = "0.12.0-alpha",
                         restClient = container.restClient,
                         wsClient = container.wsClient,
                         voiceEngine = container.voiceEngine,
@@ -312,7 +312,7 @@ private fun BackspaceRootApp(container: AppContainer) {
                                 val repoSlug = context.getString(R.string.updater_repo_slug)
                                 val result = container.releaseUpdater.checkLatestRelease(
                                     repoSlug = repoSlug,
-                                    currentVersion = "0.11.0-alpha",
+                                    currentVersion = "0.12.0-alpha",
                                 )
                                 if (result != null && result.updateAvailable && result.downloadUrl.isNotBlank()) {
                                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(result.downloadUrl)))

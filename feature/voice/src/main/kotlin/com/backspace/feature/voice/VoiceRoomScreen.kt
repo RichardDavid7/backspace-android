@@ -652,24 +652,20 @@ fun VoiceRoomScreen(
                 }
             }
 
-            // Resumo compacto de telemetria + VU Meter ao vivo
-            AetherSurfaceCard {
-                Text(
-                    text = "Opus ${state.effectiveAudio.bitrateKbps} kbps · ${state.userPrefs.opusFrameSizeMs}ms · " +
-                        "${state.telemetry.channelsMode.name} · ${state.connectionQuality} · " +
-                        "DTX ${if (state.effectiveAudio.dtx) "ON" else "OFF"} · RED ${if (state.effectiveAudio.red) "ON" else "OFF"}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textSecondary,
-                )
-                Spacer(Modifier.height(6.dp))
+            // VU Meter fino e discreto (telemetria completa fica no botão 🎛️ do topo)
+            if (state.micInputLevel > 0.02f || state.isPttPressed) {
                 LinearProgressIndicator(
                     progress = { state.micInputLevel.coerceIn(0f, 1f) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(6.dp)
+                        .height(5.dp)
                         .clip(RoundedCornerShape(4.dp)),
-                    color = if (state.micInputLevel >= state.userPrefs.vadThreshold) colors.accentMint else colors.accentPrimary,
-                    trackColor = colors.bgBase,
+                    color = if (state.micInputLevel >= state.userPrefs.vadThreshold || state.isPttPressed) {
+                        colors.accentMint
+                    } else {
+                        colors.accentPrimary
+                    },
+                    trackColor = colors.bgChannel,
                 )
             }
         }

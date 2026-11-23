@@ -149,10 +149,12 @@ fun ChatChannelScreen(
     }
     val myUserId = snapshot.currentUser?.id
 
-    // Mapeia cores dos cargos dos membros do Espaço deste canal
-    val roleColorByUserId = remember(snapshot.spaces, channelId) {
-        val space = snapshot.spaces.firstOrNull { s -> s.channels.any { it.id == channelId } }
-        space?.members.orEmpty().mapNotNull { member ->
+    // Mapeia cores dos cargos e membros do Espaço deste canal (para cores + autocomplete @)
+    val currentSpace = remember(snapshot.spaces, channelId) {
+        snapshot.spaces.firstOrNull { s -> s.channels.any { it.id == channelId } }
+    }
+    val roleColorByUserId = remember(currentSpace) {
+        currentSpace?.members.orEmpty().mapNotNull { member ->
             val hex = member.highestRoleColorHex ?: return@mapNotNull null
             val parsed = runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrNull()
                 ?: return@mapNotNull null
@@ -672,11 +674,96 @@ fun ChatChannelScreen(
                             )
                         } else if (msg.safeContent.isNotBlank()) {
                             Spacer(Modifier.height(4.dp))
-                            Text(
-                                text = if (msg.editedAt != null) "${msg.safeContent} (editado)" else msg.safeContent,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = colors.textPrimary,
+                            MarkdownMessageText(
+                                text = msg.safeContent,
+                                edited = msg.editedAt != null,
                             )
+
+                            // Cartão de Convite de Espaço clicável quando a mensagem contém /invite/<código>
+                            val inviteMatch = Regex("""https?://[^\s]+/invite/([a-zA-Z0-9_-]+)""").find(msg.safeContent)
+                            if (inviteMatch != null) {
+                                val inviteCode = inviteMatch.groupValues[1]
+                                Spacer(Modifier.height(6.dp))
+                                Surface(
+                                    color = colors.bgElevated,
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text("Convite de Espaço", style = MaterialTheme.typography.labelLarge, color = colors.accentPrimary)
+                                            Text(inviteCode, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
+                                        }
+                                        TextButton(
+                                            onClick = {
+                                                scope.launch {
+                                                    runCatching {
+                                                        val joined = restClient.joinSpaceByInvite(instanceUrl, jwtToken, inviteCode)
+                                                        wsClient.refreshSpaceDetail(joined.id)
+                                                    }.onFailure { err -> errorText = err.message }
+                                                }
+                                            },
+                                        ) {
+                                            Text("Entrar", color = colors.accentMint)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Embeds ricos recebidos
+                        if (msg.embeds.isNotEmpty()) {
+                            Spacer(Modifier.height(6.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                msg.embeds.forEach { embed ->
+                                    Surface(
+                                        color = colors.bgElevated,
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable(enabled = embed.url.isNotBlank()) {
+                                                runCatching {
+                                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(embed.url)))
+                                                }
+                                            },
+                                    ) {
+                                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            if (!embed.siteName.isNullOrBlank()) {
+                                                Text(embed.siteName!!, style = MaterialTheme.typography.labelSmall, color = colors.textTertiary)
+                                            }
+                                            if (!embed.title.isNullOrBlank()) {
+                                                Text(embed.title!!, style = MaterialTheme.typography.titleSmall, color = colors.accentSky)
+                                            }
+                                            if (!embed.description.isNullOrBlank()) {
+                                                Text(
+                                                    embed.description!!,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = colors.textSecondary,
+                                                    maxLines = 3,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                            }
+                                            val img = embed.imageUrl?.takeIf { it.isNotBlank() }
+                                                ?: embed.thumbnailUrl?.takeIf { it.isNotBlank() }
+                                            if (img != null) {
+                                                AsyncImage(
+                                                    model = ImageRequest.Builder(context).data(img).crossfade(true).build(),
+                                                    contentDescription = embed.title,
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .height(140.dp)
+                                                        .clip(RoundedCornerShape(8.dp)),
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                         // Anexos recebidos: prévia compacta para imagens + card para outros arquivos
@@ -902,6 +989,41 @@ fun ChatChannelScreen(
             }
         }
 
+        // Autocomplete de @menções quando o usuário digita @ no Espaço
+        val mentionToken = remember(draft, isDm) {
+            if (isDm) null else Regex("""(?:^|\s)@([a-zA-Z0-9_.-]*)$""").find(draft)?.groupValues?.get(1)
+        }
+        if (mentionToken != null && currentSpace != null) {
+            val suggestions = remember(mentionToken, currentSpace) {
+                val q = mentionToken.lowercase()
+                val base = buildList {
+                    if ("everyone".startsWith(q)) add("everyone" to "Todos no canal")
+                    if ("here".startsWith(q)) add("here" to "Online agora")
+                    currentSpace.members.forEach { m ->
+                        val uname = m.user?.username ?: return@forEach
+                        if (uname.lowercase().contains(q) || m.label.lowercase().contains(q)) {
+                            add(uname to m.label)
+                        }
+                    }
+                }
+                base.take(5)
+            }
+            if (suggestions.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(suggestions, key = { it.first }) { (uname, label) ->
+                        FilterChip(
+                            selected = false,
+                            onClick = {
+                                draft = draft.replace(Regex("""@([a-zA-Z0-9_.-]*)$"""), "@$uname ")
+                            },
+                            label = { Text("@$uname ($label)") },
+                        )
+                    }
+                }
+            }
+        }
+
         // Bandeja de prévia de anexos pendentes (com miniatura de imagem ou ícone + nome + remover)
         if (pendingAttachments.isNotEmpty()) {
             Spacer(Modifier.height(6.dp))
@@ -1097,11 +1219,27 @@ private fun MediaPickerDialog(
 ) {
     val colors = AetherTheme.colors
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var tab by remember { mutableStateOf(0) } // 0 = Emoji, 1 = GIF, 2 = Stickers
     var gifQuery by remember { mutableStateOf("") }
     var gifs by remember { mutableStateOf<List<GifItem>>(emptyList()) }
     var stickers by remember { mutableStateOf<List<StickerItem>>(emptyList()) }
     var statusText by remember { mutableStateOf<String?>(null) }
+
+    val stickerUploadLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            statusText = null
+            runCatching {
+                val (fileName, mimeType, bytes) = readUriPayload(context, uri)
+                val cleanName = fileName.substringBeforeLast('.').take(40).ifBlank { "sticker" }
+                val uploaded = restClient.uploadSticker(instanceUrl, jwtToken, cleanName, mimeType, bytes)
+                stickers = listOf(uploaded) + stickers
+            }.onFailure { statusText = it.message }
+        }
+    }
 
     LaunchedEffect(tab, gifQuery) {
         statusText = null
@@ -1195,11 +1333,17 @@ private fun MediaPickerDialog(
                     }
 
                     else -> {
+                        TextButton(
+                            onClick = { stickerUploadLauncher.launch("image/*") },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("+ Enviar nova figurinha", color = colors.accentPrimary)
+                        }
                         if (stickers.isEmpty()) {
-                            Text("—", color = colors.textSecondary)
+                            Text("Nenhuma figurinha ainda.", color = colors.textSecondary)
                         } else {
                             LazyColumn(
-                                modifier = Modifier.heightIn(max = 260.dp),
+                                modifier = Modifier.heightIn(max = 230.dp),
                                 verticalArrangement = Arrangement.spacedBy(6.dp),
                             ) {
                                 items(stickers.chunked(3)) { row ->
@@ -1220,7 +1364,17 @@ private fun MediaPickerDialog(
                                                     .height(76.dp)
                                                     .clip(RoundedCornerShape(8.dp))
                                                     .background(colors.bgBase)
-                                                    .clickable { onSendUrl(stToken) },
+                                                    .combinedClickable(
+                                                        onClick = { onSendUrl(stToken) },
+                                                        onLongClick = {
+                                                            scope.launch {
+                                                                runCatching {
+                                                                    restClient.deleteSticker(instanceUrl, jwtToken, st.id)
+                                                                    stickers = stickers.filterNot { it.id == st.id }
+                                                                }.onFailure { statusText = it.message }
+                                                            }
+                                                        },
+                                                    ),
                                             )
                                         }
                                         repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }

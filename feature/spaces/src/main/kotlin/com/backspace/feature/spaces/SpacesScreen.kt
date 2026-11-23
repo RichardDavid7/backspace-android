@@ -326,15 +326,13 @@ fun SpacesScreen(
                 Spacer(Modifier.width(10.dp))
                 Column {
                     Text(
-                        text = spacesTitle,
-                        style = MaterialTheme.typography.titleLarge,
+                        text = snapshot.currentUser?.label ?: spacesTitle,
+                        style = MaterialTheme.typography.titleMedium,
                         color = colors.textPrimary,
                     )
-                    val subtitle = buildString {
-                        append(snapshot.currentUser?.label ?: snapshot.connectionState.name)
-                        val custom = snapshot.currentUser?.customStatus
-                        if (!custom.isNullOrBlank()) append(" · $custom")
-                    }
+                    val subtitle = snapshot.currentUser?.customStatus?.takeIf { it.isNotBlank() }
+                        ?: selectedSpace?.name
+                        ?: snapshot.connectionState.name
                     Text(
                         text = subtitle,
                         style = MaterialTheme.typography.bodySmall,

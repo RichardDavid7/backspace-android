@@ -44,6 +44,19 @@ data class MessageReaction(
 )
 
 @Serializable
+data class MessageEmbed(
+    val id: String = "",
+    val type: String = "generic",
+    val url: String = "",
+    val title: String? = null,
+    val description: String? = null,
+    val siteName: String? = null,
+    val imageUrl: String? = null,
+    val thumbnailUrl: String? = null,
+    val color: String? = null,
+)
+
+@Serializable
 data class Message(
     val id: String,
     val channelId: String,
@@ -56,6 +69,7 @@ data class Message(
     val replyTo: Message? = null,
     val user: User? = null,
     val attachments: List<MessageAttachment> = emptyList(),
+    val embeds: List<MessageEmbed> = emptyList(),
     val reactions: List<MessageReaction> = emptyList(),
     val mentionEveryone: Boolean = false,
     val mentionRoleIds: List<String> = emptyList(),

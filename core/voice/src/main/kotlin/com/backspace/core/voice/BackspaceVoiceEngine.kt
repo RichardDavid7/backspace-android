@@ -26,6 +26,7 @@ import io.livekit.android.renderer.TextureViewRenderer
 import io.livekit.android.room.Room
 import io.livekit.android.room.participant.AudioTrackPublishDefaults
 import io.livekit.android.room.track.DataPublishReliability
+import io.livekit.android.room.track.LocalAudioTrack
 import io.livekit.android.room.track.LocalAudioTrackOptions
 import io.livekit.android.room.track.LocalVideoTrack
 import io.livekit.android.room.track.RemoteAudioTrack
@@ -138,6 +139,7 @@ class BackspaceVoiceEngine(
     private var policyObserverJob: Job? = null
     private var idleSuspendJob: Job? = null
     private var telemetryJob: Job? = null
+    private var pttReleaseJob: Job? = null
 
     private var currentInstanceUrl: String? = null
     private var currentJwt: String? = null
@@ -200,8 +202,9 @@ class BackspaceVoiceEngine(
                 observeRoomEvents(lkRoom)
 
                 lkRoom.connect(url = tokenResp.url, token = tokenResp.token)
-                val shouldMicBeOn = computeDesiredMicEnabled(_state.value)
-                lkRoom.localParticipant.setMicrophoneEnabled(shouldMicBeOn)
+                // Mantém hardware do microfone aquecido para PTT sem corte no início da fala
+                lkRoom.localParticipant.setMicrophoneEnabled(true)
+                applyInstantMicGate(lkRoom, computeDesiredMicEnabled(_state.value))
                 uiSounds.play(VoiceUiSound.USER_JOIN, _state.value.userPrefs.uiSoundsEnabled)
 
                 wsClient.sendVoiceStatus(
@@ -282,8 +285,9 @@ class BackspaceVoiceEngine(
                 observeRoomEvents(lkRoom)
 
                 lkRoom.connect(url = tokenResp.url, token = tokenResp.token)
-                val shouldMicBeOn = computeDesiredMicEnabled(_state.value)
-                lkRoom.localParticipant.setMicrophoneEnabled(shouldMicBeOn)
+                // Mantém hardware do microfone aquecido para PTT sem corte no início da fala
+                lkRoom.localParticipant.setMicrophoneEnabled(true)
+                applyInstantMicGate(lkRoom, computeDesiredMicEnabled(_state.value))
                 uiSounds.play(VoiceUiSound.USER_JOIN, _state.value.userPrefs.uiSoundsEnabled)
 
                 VoiceForegroundService.startOrUpdate(
@@ -343,16 +347,46 @@ class BackspaceVoiceEngine(
 
     fun setPttPressed(pressed: Boolean) {
         if (_state.value.userPrefs.transmissionMode != TransmissionMode.PUSH_TO_TALK) return
-        if (_state.value.isPttPressed == pressed) return
-        scope.launch {
-            _state.update { it.copy(isPttPressed = pressed) }
-            val lkRoom = room ?: return@launch
-            val micOn = computeDesiredMicEnabled(_state.value)
-            lkRoom.localParticipant.setMicrophoneEnabled(micOn)
+        pttReleaseJob?.cancel()
+        if (pressed) {
+            if (_state.value.isPttPressed) return
+            _state.update { it.copy(isPttPressed = true) }
+            val lkRoom = room ?: return
+            // Abre o gate da track instantaneamente (0ms de latência, sem recriar captura Android)
+            applyInstantMicGate(lkRoom, enabled = !_state.value.isMuted && !_state.value.isDeafened)
             if (_state.value.userPrefs.audioDuckingEnabled) {
                 applyRemoteAudioVolume(lkRoom, muted = _state.value.isDeafened)
             }
+        } else {
+            // Tail release de 250ms estilo Mumble para nunca cortar a última sílaba
+            pttReleaseJob = scope.launch {
+                delay(250L)
+                _state.update { it.copy(isPttPressed = false) }
+                val lkRoom = room ?: return@launch
+                applyInstantMicGate(lkRoom, enabled = false)
+                if (_state.value.userPrefs.audioDuckingEnabled) {
+                    applyRemoteAudioVolume(lkRoom, muted = _state.value.isDeafened)
+                }
+            }
         }
+    }
+
+    private fun applyInstantMicGate(lkRoom: Room, enabled: Boolean) {
+        val localAudio = lkRoom.localParticipant.audioTrackPublications
+            .firstOrNull { (pub, _) -> pub.source == Track.Source.MICROPHONE }
+            ?.second as? LocalAudioTrack
+        if (localAudio != null) {
+            localAudio.enabled = enabled
+        } else {
+            scope.launch {
+                lkRoom.localParticipant.setMicrophoneEnabled(enabled)
+            }
+        }
+    }
+
+    fun resetAudioPreferencesToDefault() {
+        updateUserAudioPreferences { UserAudioPreferences() }
+        setSoundboardVolume(0.8f)
     }
 
     private fun computeDesiredMicEnabled(s: VoiceSessionState): Boolean {
@@ -605,7 +639,7 @@ class BackspaceVoiceEngine(
         }
 
         val lkRoom = room ?: return
-        lkRoom.localParticipant.setMicrophoneEnabled(computeDesiredMicEnabled(_state.value))
+        applyInstantMicGate(lkRoom, computeDesiredMicEnabled(_state.value))
         applyRemoteAudioVolume(lkRoom, muted = isDeafened)
         publishDeafenDataChannel(lkRoom, isDeafened)
         wsClient.sendVoiceStatus(

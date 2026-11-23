@@ -1,5 +1,9 @@
 package com.backspace.feature.settings
 
+import android.net.Uri
+import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -9,9 +13,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -27,8 +34,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.backspace.core.designsystem.AetherAvatar
 import com.backspace.core.designsystem.AetherPrimaryButton
 import com.backspace.core.designsystem.AetherPurpleSlider
 import com.backspace.core.designsystem.AetherSurfaceCard
@@ -40,7 +50,9 @@ import com.backspace.core.model.TransmissionMode
 import com.backspace.core.network.BackspaceRestClient
 import com.backspace.core.network.BackspaceWebSocketClient
 import com.backspace.core.voice.BackspaceVoiceEngine
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun SettingsScreen(
@@ -124,23 +136,75 @@ fun SettingsScreen(
         }
 
         if (selectedTab == 0 || !isInstanceAdmin) {
-            // ── ABA USUÁRIO: Perfil editável + Processamento de Áudio + Opus + Vídeo ──
+            // ── ABA USUÁRIO: Perfil + Microfone/Transmissão (amigável) + Áudio/Opus + Restaurar ──
+            val context = LocalContext.current
             val me = snapshot.currentUser
             var displayName by remember(me?.displayName) { mutableStateOf(me?.displayName.orEmpty()) }
             var bio by remember(me?.bio) { mutableStateOf(me?.bio.orEmpty()) }
             var customStatus by remember(me?.customStatus) { mutableStateOf(me?.customStatus.orEmpty()) }
             var profileMsg by remember { mutableStateOf<String?>(null) }
 
+            val avatarPicker = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.GetContent(),
+            ) { uri: Uri? ->
+                if (uri == null) return@rememberLauncherForActivityResult
+                scope.launch {
+                    profileMsg = null
+                    runCatching {
+                        val (fileName, mimeType, bytes) = withContext(Dispatchers.IO) {
+                            val resolver = context.contentResolver
+                            var name = "avatar.png"
+                            resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                                if (c.moveToFirst()) {
+                                    val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                                    if (idx >= 0) name = c.getString(idx) ?: name
+                                }
+                            }
+                            val type = resolver.getType(uri) ?: "image/png"
+                            val data = resolver.openInputStream(uri)?.use { it.readBytes() }
+                                ?: throw IllegalStateException("Cannot read image")
+                            Triple(name, type, data)
+                        }
+                        val uploaded = restClient.uploadFileTus(instanceUrl, jwtToken, fileName, mimeType, bytes)
+                        val updated = restClient.updateMyStatus(
+                            instanceUrl = instanceUrl,
+                            token = jwtToken,
+                            avatar = uploaded.filename,
+                        )
+                        wsClient.updateCurrentUserLocal(updated)
+                    }.onSuccess { profileMsg = "Foto atualizada!" }
+                        .onFailure { profileMsg = it.message }
+                }
+            }
+
             AetherSurfaceCard {
                 Text(text = accountHeader, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
-                Spacer(Modifier.height(6.dp))
-                Text(text = "$username · v$appVersion", color = colors.accentMint, style = MaterialTheme.typography.bodySmall)
-                Text(text = instanceUrl, color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AetherAvatar(
+                        imageUrl = me?.avatarUrl(instanceUrl),
+                        fallbackLabel = username,
+                        size = 52.dp,
+                        status = me?.status ?: "online",
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = username, color = colors.textPrimary, style = MaterialTheme.typography.titleSmall)
+                        Text(text = "$instanceUrl · v$appVersion", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = { avatarPicker.launch("image/*") },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Alterar foto de perfil", color = colors.accentSky)
+                }
+                Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = displayName,
                     onValueChange = { displayName = it },
-                    label = { Text("Display name") },
+                    label = { Text("Nome de exibição") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -148,7 +212,7 @@ fun SettingsScreen(
                 OutlinedTextField(
                     value = customStatus,
                     onValueChange = { customStatus = it },
-                    label = { Text("Custom status") },
+                    label = { Text("Status personalizado") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -156,7 +220,7 @@ fun SettingsScreen(
                 OutlinedTextField(
                     value = bio,
                     onValueChange = { bio = it },
-                    label = { Text("Bio") },
+                    label = { Text("Biografia") },
                     modifier = Modifier.fillMaxWidth(),
                     maxLines = 3,
                 )
@@ -180,7 +244,7 @@ fun SettingsScreen(
                                 )
                             }.onSuccess { updated ->
                                 wsClient.updateCurrentUserLocal(updated)
-                                profileMsg = "OK"
+                                profileMsg = "Perfil salvo!"
                             }.onFailure { err ->
                                 profileMsg = err.message
                             }
@@ -189,9 +253,78 @@ fun SettingsScreen(
                 )
             }
 
+            // Card separado e amigável: Microfone e Modo de Transmissão
+            AetherSurfaceCard {
+                Text(text = "Microfone e Transmissão", style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Escolha como sua voz é enviada nas chamadas.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                )
+                Spacer(Modifier.height(10.dp))
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = prefs.transmissionMode == TransmissionMode.VOICE_ACTIVITY,
+                        onClick = { voiceEngine.updateUserAudioPreferences { it.copy(transmissionMode = TransmissionMode.VOICE_ACTIVITY) } },
+                        label = { Text("Automático (Voz)") },
+                    )
+                    FilterChip(
+                        selected = prefs.transmissionMode == TransmissionMode.PUSH_TO_TALK,
+                        onClick = { voiceEngine.updateUserAudioPreferences { it.copy(transmissionMode = TransmissionMode.PUSH_TO_TALK) } },
+                        label = { Text("Apertar p/ Falar (PTT)") },
+                    )
+                }
+
+                if (prefs.transmissionMode == TransmissionMode.PUSH_TO_TALK) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "Segure o botão na chamada ou a tecla física escolhida abaixo para falar (sem cortar início nem fim).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textSecondary,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(
+                            PttHardwareKey.NONE to "Só na tela",
+                            PttHardwareKey.VOLUME_UP to "Botão Vol +",
+                            PttHardwareKey.VOLUME_DOWN to "Botão Vol -",
+                        ).forEach { (key, label) ->
+                            FilterChip(
+                                selected = prefs.pttHardwareKey == key,
+                                onClick = { voiceEngine.updateUserAudioPreferences { it.copy(pttHardwareKey = key) } },
+                                label = { Text(label) },
+                            )
+                        }
+                    }
+                } else {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "Sensibilidade do microfone (${(prefs.vadThreshold * 100).toInt()}%) — abaixe se sua voz estiver cortando; aumente se estiver pegando ruído de fundo.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textSecondary,
+                    )
+                    AetherPurpleSlider(
+                        value = prefs.vadThreshold,
+                        onValueChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(vadThreshold = v) } },
+                        valueRange = 0.02f..0.8f,
+                    )
+                    LinearProgressIndicator(
+                        progress = { voiceState.micInputLevel.coerceIn(0f, 1f) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(4.dp)),
+                        color = colors.accentMint,
+                        trackColor = colors.bgBase,
+                    )
+                }
+            }
+
             AetherSurfaceCard {
                 Text(text = audioHeader, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(8.dp))
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
@@ -206,52 +339,9 @@ fun SettingsScreen(
                     )
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = prefs.transmissionMode == TransmissionMode.VOICE_ACTIVITY,
-                        onClick = { voiceEngine.updateUserAudioPreferences { it.copy(transmissionMode = TransmissionMode.VOICE_ACTIVITY) } },
-                        label = { Text("Atividade de Voz (VAD)") },
-                    )
-                    FilterChip(
-                        selected = prefs.transmissionMode == TransmissionMode.PUSH_TO_TALK,
-                        onClick = { voiceEngine.updateUserAudioPreferences { it.copy(transmissionMode = TransmissionMode.PUSH_TO_TALK) } },
-                        label = { Text("Push-to-Talk") },
-                    )
-                }
-
-                if (prefs.transmissionMode == TransmissionMode.PUSH_TO_TALK) {
-                    Spacer(Modifier.height(6.dp))
-                    Text("Tecla física PTT:", style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(
-                            PttHardwareKey.NONE to "Nenhuma",
-                            PttHardwareKey.VOLUME_UP to "Vol +",
-                            PttHardwareKey.VOLUME_DOWN to "Vol -",
-                        ).forEach { (key, label) ->
-                            FilterChip(
-                                selected = prefs.pttHardwareKey == key,
-                                onClick = { voiceEngine.updateUserAudioPreferences { it.copy(pttHardwareKey = key) } },
-                                label = { Text(label) },
-                            )
-                        }
-                    }
-                } else {
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = "Sensibilidade VAD: ${(prefs.vadThreshold * 100).toInt()}%",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.textSecondary,
-                    )
-                    AetherPurpleSlider(
-                        value = prefs.vadThreshold,
-                        onValueChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(vadThreshold = v) } },
-                        valueRange = 0.02f..0.8f,
-                    )
-                }
-
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    text = "Volume mestre de saída: ${(prefs.masterOutputVolume * 100).toInt()}%",
+                    text = "Volume geral da chamada: ${(prefs.masterOutputVolume * 100).toInt()}%",
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.textSecondary,
                 )
@@ -261,7 +351,7 @@ fun SettingsScreen(
                     valueRange = 0f..2f,
                 )
 
-                Text("Frame size Opus:", style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
+                Text("Tamanho do pacote Opus (menor = menos atraso):", style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(10, 20, 40).forEach { ms ->
                         FilterChip(
@@ -273,32 +363,32 @@ fun SettingsScreen(
                 }
 
                 SettingsToggleRow(
-                    label = "Modo Economia de Dados (4G/5G · 24 kbps)",
+                    label = "Economia de dados móveis (24 kbps)",
                     checked = prefs.dataSaverMode,
                     onCheckedChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(dataSaverMode = v) } },
                 )
                 SettingsToggleRow(
-                    label = "Audio Ducking (atenuar sala ao falar)",
+                    label = "Abaixar volume da sala quando eu falar",
                     checked = prefs.audioDuckingEnabled,
                     onCheckedChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(audioDuckingEnabled = v) } },
                 )
                 SettingsToggleRow(
-                    label = "Sons de interface (mute/join/leave)",
+                    label = "Sons do app (mutar / entrar / sair)",
                     checked = prefs.uiSoundsEnabled,
                     onCheckedChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(uiSoundsEnabled = v) } },
                 )
                 SettingsToggleRow(
-                    label = "Echo Cancellation (AEC)",
+                    label = "Cancelamento de Eco (AEC)",
                     checked = prefs.echoCancellation,
                     onCheckedChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(echoCancellation = v) } },
                 )
                 SettingsToggleRow(
-                    label = "Noise Suppression (NS)",
+                    label = "Supressão de Ruído (NS)",
                     checked = prefs.noiseSuppression,
                     onCheckedChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(noiseSuppression = v) } },
                 )
                 SettingsToggleRow(
-                    label = "Auto Gain Control (AGC)",
+                    label = "Ganho Automático (AGC)",
                     checked = prefs.autoGainControl,
                     onCheckedChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(autoGainControl = v) } },
                 )
@@ -347,6 +437,14 @@ fun SettingsScreen(
                     onValueChange = { voiceEngine.setSoundboardVolume(it) },
                     valueRange = 0f..1f,
                 )
+
+                Spacer(Modifier.height(6.dp))
+                OutlinedButton(
+                    onClick = { voiceEngine.resetAudioPreferencesToDefault() },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Restaurar padrões de áudio", color = colors.accentAmber)
+                }
             }
 
             AetherSurfaceCard {

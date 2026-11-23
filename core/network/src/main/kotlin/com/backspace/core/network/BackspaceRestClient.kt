@@ -117,8 +117,15 @@ data class SendMessageRequest(
 data class UpdateMeRequest(
     val displayName: String? = null,
     val bio: String? = null,
+    val avatar: String? = null,
     val status: String? = null,
     val customStatus: String? = null,
+)
+
+@Serializable
+data class UploadStickerRequest(
+    val name: String,
+    val image: String,
 )
 
 @Serializable
@@ -346,6 +353,36 @@ class BackspaceRestClient(
         val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
         return executeGet("$base/api/stickers", token = token)
     }
+
+    suspend fun uploadSticker(
+        instanceUrl: String,
+        token: String,
+        name: String,
+        mimeType: String,
+        bytes: ByteArray,
+    ): StickerItem {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val b64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+        val dataUri = "data:$mimeType;base64,$b64"
+        return executePost(
+            url = "$base/api/stickers",
+            body = json.encodeToString(UploadStickerRequest.serializer(), UploadStickerRequest(name, dataUri)),
+            token = token,
+        )
+    }
+
+    suspend fun deleteSticker(instanceUrl: String, token: String, stickerId: String) =
+        withContext(Dispatchers.IO) {
+            val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+            val req = Request.Builder()
+                .url("$base/api/stickers/$stickerId")
+                .header("Authorization", "Bearer $token")
+                .delete()
+                .build()
+            okHttpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) throw BackspaceApiException(resp.code, null, "HTTP ${resp.code}")
+            }
+        }
 
     // ── Espaços: Criar, Entrar por Convite, Descobrir, Gerar Convite, Canais/Categorias ──
     suspend fun createSpace(instanceUrl: String, token: String, name: String, description: String?): Space {
@@ -763,6 +800,7 @@ class BackspaceRestClient(
         token: String,
         displayName: String? = null,
         bio: String? = null,
+        avatar: String? = null,
         status: String? = null,
         customStatus: String? = null,
     ): User {
@@ -774,6 +812,7 @@ class BackspaceRestClient(
                 UpdateMeRequest(
                     displayName = displayName,
                     bio = bio,
+                    avatar = avatar,
                     status = status,
                     customStatus = customStatus,
                 ),

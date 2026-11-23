@@ -27,11 +27,11 @@
 ---
 
 ## Bloco C — Chat Avançado (Paridade Web) (`v0.12.0`)
-- [ ] **Markdown completo** (negrito, itálico, código inline, blocos de código, links clicáveis, spoilers)
-- [ ] **Autocomplete de `@menções`** ao digitar `@` (membros, cargos, `@everyone`, `@here`) + destaque visual na mensagem
-- [ ] **Renderização de Embeds ricos** (título, descrição, imagem, vídeo/GIF inline) e **Cartões de Convite de Espaço** clicáveis
-- [ ] **Upload e gerenciamento de Figurinhas pessoais** (`POST /api/stickers`, renomear, excluir)
-- [ ] **Upload de Avatar / Banner** do próprio usuário nas Configurações de Perfil
+- [x] **Markdown completo** (negrito, itálico, código inline, blocos de código, links clicáveis, spoilers)
+- [x] **Autocomplete de `@menções`** ao digitar `@` (membros, cargos, `@everyone`, `@here`) + destaque visual na mensagem
+- [x] **Renderização de Embeds ricos** (título, descrição, imagem, vídeo/GIF inline) e **Cartões de Convite de Espaço** clicáveis
+- [x] **Upload e gerenciamento de Figurinhas pessoais** (`POST /api/stickers`, excluir)
+- [x] **Upload de Avatar** do próprio usuário nas Configurações de Perfil
 
 ---
 
