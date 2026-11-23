@@ -13,6 +13,7 @@ import com.backspace.core.model.SoundboardPlayPayload
 import com.backspace.core.model.SoundboardSound
 import com.backspace.core.model.SoundboardUrlValidator
 import com.backspace.core.model.Space
+import com.backspace.core.model.TransmissionMode
 import com.backspace.core.model.UserAudioPreferences
 import com.backspace.core.model.VoiceTelemetry
 import com.backspace.core.network.BackspaceRestClient
@@ -79,9 +80,12 @@ data class VoiceSessionState(
     val channelName: String = "",
     val isMuted: Boolean = false,
     val isDeafened: Boolean = false,
+    val isPttPressed: Boolean = false,
     val isCameraOn: Boolean = false,
     val isScreenSharing: Boolean = false,
     val isIdleSuspended: Boolean = false,
+    val micInputLevel: Float = 0f,
+    val connectionQuality: String = "GOOD",
     val outputRoute: AudioOutputRoute = AudioOutputRoute.SPEAKER,
     val userPrefs: UserAudioPreferences = UserAudioPreferences(),
     val effectiveAudio: EffectiveAudioConfig = AudioPolicyResolver.resolveEffectiveConfig(
@@ -109,10 +113,24 @@ class BackspaceVoiceEngine(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val audioRouter = VoiceAudioRouter(appContext)
+    private val prefsStorage = AudioPreferencesStorage(appContext)
+    private val uiSounds = VoiceUiSoundPlayer(appContext)
     private val soundboardPlayer = SoundboardAudioPlayer()
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
-    private val _state = MutableStateFlow(VoiceSessionState())
+    private val _state = MutableStateFlow(
+        run {
+            val savedPrefs = prefsStorage.load()
+            VoiceSessionState(
+                userPrefs = savedPrefs,
+                effectiveAudio = AudioPolicyResolver.resolveEffectiveConfig(
+                    policy = AudioPolicyResolver.resolvePolicy(),
+                    userPrefs = savedPrefs,
+                ),
+                soundboardVolume = prefsStorage.loadSoundboardVolume(),
+            )
+        },
+    )
     val state: StateFlow<VoiceSessionState> = _state.asStateFlow()
 
     private var room: Room? = null
@@ -182,7 +200,9 @@ class BackspaceVoiceEngine(
                 observeRoomEvents(lkRoom)
 
                 lkRoom.connect(url = tokenResp.url, token = tokenResp.token)
-                lkRoom.localParticipant.setMicrophoneEnabled(!_state.value.isMuted && !_state.value.isDeafened)
+                val shouldMicBeOn = computeDesiredMicEnabled(_state.value)
+                lkRoom.localParticipant.setMicrophoneEnabled(shouldMicBeOn)
+                uiSounds.play(VoiceUiSound.USER_JOIN, _state.value.userPrefs.uiSoundsEnabled)
 
                 wsClient.sendVoiceStatus(
                     isMuted = _state.value.isMuted,
@@ -262,7 +282,9 @@ class BackspaceVoiceEngine(
                 observeRoomEvents(lkRoom)
 
                 lkRoom.connect(url = tokenResp.url, token = tokenResp.token)
-                lkRoom.localParticipant.setMicrophoneEnabled(!_state.value.isMuted && !_state.value.isDeafened)
+                val shouldMicBeOn = computeDesiredMicEnabled(_state.value)
+                lkRoom.localParticipant.setMicrophoneEnabled(shouldMicBeOn)
+                uiSounds.play(VoiceUiSound.USER_JOIN, _state.value.userPrefs.uiSoundsEnabled)
 
                 VoiceForegroundService.startOrUpdate(
                     context = appContext,
@@ -291,6 +313,9 @@ class BackspaceVoiceEngine(
 
     fun leaveChannel() {
         scope.launch {
+            if (_state.value.status == VoiceConnectionStatus.CONNECTED) {
+                uiSounds.play(VoiceUiSound.DISCONNECT, _state.value.userPrefs.uiSoundsEnabled)
+            }
             cleanupRoomOnly()
             wsClient.sendVoiceLeave()
             VoiceForegroundService.stop(appContext)
@@ -303,6 +328,8 @@ class BackspaceVoiceEngine(
                     channelId = null,
                     channelName = "",
                     isIdleSuspended = false,
+                    isPttPressed = false,
+                    micInputLevel = 0f,
                     isCameraOn = false,
                     isScreenSharing = false,
                     participants = emptyList(),
@@ -314,10 +341,36 @@ class BackspaceVoiceEngine(
         }
     }
 
+    fun setPttPressed(pressed: Boolean) {
+        if (_state.value.userPrefs.transmissionMode != TransmissionMode.PUSH_TO_TALK) return
+        if (_state.value.isPttPressed == pressed) return
+        scope.launch {
+            _state.update { it.copy(isPttPressed = pressed) }
+            val lkRoom = room ?: return@launch
+            val micOn = computeDesiredMicEnabled(_state.value)
+            lkRoom.localParticipant.setMicrophoneEnabled(micOn)
+            if (_state.value.userPrefs.audioDuckingEnabled) {
+                applyRemoteAudioVolume(lkRoom, muted = _state.value.isDeafened)
+            }
+        }
+    }
+
+    private fun computeDesiredMicEnabled(s: VoiceSessionState): Boolean {
+        if (s.isMuted || s.isDeafened) return false
+        return when (s.userPrefs.transmissionMode) {
+            TransmissionMode.VOICE_ACTIVITY -> true
+            TransmissionMode.PUSH_TO_TALK -> s.isPttPressed
+        }
+    }
+
     fun toggleMute() {
         scope.launch {
             val nextMuted = !_state.value.isMuted
             val nextDeafened = if (!nextMuted) false else _state.value.isDeafened
+            uiSounds.play(
+                if (nextMuted) VoiceUiSound.MUTE else VoiceUiSound.UNMUTE,
+                _state.value.userPrefs.uiSoundsEnabled,
+            )
             applyMuteDeafenState(isMuted = nextMuted, isDeafened = nextDeafened)
         }
     }
@@ -326,6 +379,10 @@ class BackspaceVoiceEngine(
         scope.launch {
             val nextDeafened = !_state.value.isDeafened
             val nextMuted = if (nextDeafened) true else _state.value.isMuted
+            uiSounds.play(
+                if (nextDeafened) VoiceUiSound.DEAFEN else VoiceUiSound.UNDEAFEN,
+                _state.value.userPrefs.uiSoundsEnabled,
+            )
             applyMuteDeafenState(isMuted = nextMuted, isDeafened = nextDeafened)
         }
     }
@@ -433,7 +490,9 @@ class BackspaceVoiceEngine(
     }
 
     fun setSoundboardVolume(volume: Float) {
-        _state.update { it.copy(soundboardVolume = volume.coerceIn(0f, 1f)) }
+        val clamped = volume.coerceIn(0f, 1f)
+        prefsStorage.saveSoundboardVolume(clamped)
+        _state.update { it.copy(soundboardVolume = clamped) }
     }
 
     fun setParticipantVolume(userId: String, volume: Float) {
@@ -512,6 +571,7 @@ class BackspaceVoiceEngine(
     fun updateUserAudioPreferences(transform: (UserAudioPreferences) -> UserAudioPreferences) {
         scope.launch {
             val updatedPrefs = transform(_state.value.userPrefs)
+            prefsStorage.save(updatedPrefs)
             val currentPolicy = _state.value.effectiveAudio.policy
             val newEffective = AudioPolicyResolver.resolveEffectiveConfig(currentPolicy, updatedPrefs)
             val needsReconfigure = newEffective != _state.value.effectiveAudio
@@ -523,8 +583,13 @@ class BackspaceVoiceEngine(
                 )
             }
 
-            if (needsReconfigure && _state.value.status == VoiceConnectionStatus.CONNECTED) {
-                reapplyLiveKitAudioSettings(newEffective)
+            val lkRoom = room
+            if (lkRoom != null && _state.value.status == VoiceConnectionStatus.CONNECTED) {
+                lkRoom.localParticipant.setMicrophoneEnabled(computeDesiredMicEnabled(_state.value))
+                applyRemoteAudioVolume(lkRoom, muted = _state.value.isDeafened)
+                if (needsReconfigure) {
+                    reapplyLiveKitAudioSettings(newEffective)
+                }
             }
             scheduleIdleSuspendCheck()
         }
@@ -540,7 +605,7 @@ class BackspaceVoiceEngine(
         }
 
         val lkRoom = room ?: return
-        lkRoom.localParticipant.setMicrophoneEnabled(!isMuted && !isDeafened)
+        lkRoom.localParticipant.setMicrophoneEnabled(computeDesiredMicEnabled(_state.value))
         applyRemoteAudioVolume(lkRoom, muted = isDeafened)
         publishDeafenDataChannel(lkRoom, isDeafened)
         wsClient.sendVoiceStatus(
@@ -606,6 +671,7 @@ class BackspaceVoiceEngine(
             lkRoom.events.collect { event ->
                 when (event) {
                     is RoomEvent.ParticipantConnected -> {
+                        uiSounds.play(VoiceUiSound.USER_JOIN, _state.value.userPrefs.uiSoundsEnabled)
                         refreshParticipants(lkRoom)
                         if (_state.value.isDeafened) {
                             publishDeafenDataChannel(lkRoom, true)
@@ -613,6 +679,7 @@ class BackspaceVoiceEngine(
                         scheduleIdleSuspendCheck()
                     }
                     is RoomEvent.ParticipantDisconnected -> {
+                        uiSounds.play(VoiceUiSound.USER_LEAVE, _state.value.userPrefs.uiSoundsEnabled)
                         refreshParticipants(lkRoom)
                         scheduleIdleSuspendCheck()
                     }
@@ -677,11 +744,20 @@ class BackspaceVoiceEngine(
         telemetryJob?.cancel()
         telemetryJob = scope.launch {
             while (isActive) {
-                delay(2_000L)
+                delay(350L)
+                val lkRoom = room ?: continue
                 val effective = _state.value.effectiveAudio
                 val channelsMode = if (effective.stereo) AudioChannelsMode.STEREO else AudioChannelsMode.MONO
+                val localLevel = if (computeDesiredMicEnabled(_state.value)) {
+                    lkRoom.localParticipant.audioLevel.coerceIn(0f, 1f)
+                } else {
+                    0f
+                }
+                val quality = lkRoom.localParticipant.connectionQuality.name
                 _state.update {
                     it.copy(
+                        micInputLevel = localLevel,
+                        connectionQuality = quality,
                         telemetry = it.telemetry.copy(
                             sendBitrateKbps = if (it.isMuted || it.isIdleSuspended) 0 else effective.bitrateKbps,
                             codec = "opus",
@@ -689,6 +765,9 @@ class BackspaceVoiceEngine(
                             opusMode = effective.mode,
                         ),
                     )
+                }
+                if (_state.value.userPrefs.audioDuckingEnabled) {
+                    applyRemoteAudioVolume(lkRoom, muted = _state.value.isDeafened)
                 }
             }
         }
@@ -824,7 +903,11 @@ class BackspaceVoiceEngine(
     private fun computeRemoteVolume(userId: String, deafened: Boolean): Double {
         if (deafened) return 0.0
         if (_state.value.localMutedUsers.contains(userId)) return 0.0
-        return (_state.value.participantVolumes[userId] ?: 1.0f).toDouble()
+        val userVol = (_state.value.participantVolumes[userId] ?: 1.0f).toDouble()
+        val masterVol = _state.value.userPrefs.masterOutputVolume.toDouble()
+        val isTalking = _state.value.isPttPressed || (room?.localParticipant?.isSpeaking == true)
+        val duckFactor = if (_state.value.userPrefs.audioDuckingEnabled && isTalking) 0.35 else 1.0
+        return (userVol * masterVol * duckFactor).coerceIn(0.0, 2.5)
     }
 
     private fun applyRemoteAudioVolume(lkRoom: Room, muted: Boolean) {

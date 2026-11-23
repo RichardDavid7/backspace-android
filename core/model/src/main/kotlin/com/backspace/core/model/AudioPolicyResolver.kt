@@ -57,10 +57,10 @@ object AudioPolicyResolver {
 
         val effectiveStereo = userPrefs.stereo && policy.allowStereoAudio
 
-        val effectiveBitrate = if (userPrefs.bitrateAuto) {
-            policy.defaultBitrateKbps
-        } else {
-            clampBitrate(userPrefs.manualBitrateKbps).coerceAtMost(policy.maxBitrateKbps)
+        val effectiveBitrate = when {
+            userPrefs.dataSaverMode -> minOf(24, policy.maxBitrateKbps).coerceAtLeast(MIN_BITRATE_KBPS)
+            userPrefs.bitrateAuto -> policy.defaultBitrateKbps
+            else -> clampBitrate(userPrefs.manualBitrateKbps).coerceAtMost(policy.maxBitrateKbps)
         }
 
         val dtx = effectiveMode == AudioMode.VOICE

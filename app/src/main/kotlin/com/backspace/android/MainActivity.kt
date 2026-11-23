@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.KeyEvent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -47,6 +48,8 @@ import androidx.navigation.navArgument
 import com.backspace.core.designsystem.AetherTheme
 import com.backspace.core.designsystem.BackspaceAetherTheme
 import com.backspace.core.model.PermissionBits
+import com.backspace.core.model.PttHardwareKey
+import com.backspace.core.model.TransmissionMode
 import com.backspace.core.network.StoredSession
 import com.backspace.feature.auth.AuthScreen
 import com.backspace.feature.chat.ChatChannelScreen
@@ -71,6 +74,30 @@ class MainActivity : ComponentActivity() {
                 BackspaceRootApp(container = container)
             }
         }
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (handleHardwarePttKey(keyCode, pressed = true)) return true
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
+        if (handleHardwarePttKey(keyCode, pressed = false)) return true
+        return super.onKeyUp(keyCode, event)
+    }
+
+    private fun handleHardwarePttKey(keyCode: Int, pressed: Boolean): Boolean {
+        val voice = (application as BackspaceApplication).container.voiceEngine
+        val prefs = voice.state.value.userPrefs
+        if (prefs.transmissionMode != TransmissionMode.PUSH_TO_TALK) return false
+        val matches = when (prefs.pttHardwareKey) {
+            PttHardwareKey.VOLUME_UP -> keyCode == KeyEvent.KEYCODE_VOLUME_UP
+            PttHardwareKey.VOLUME_DOWN -> keyCode == KeyEvent.KEYCODE_VOLUME_DOWN
+            PttHardwareKey.NONE -> false
+        }
+        if (!matches) return false
+        voice.setPttPressed(pressed)
+        return true
     }
 }
 
@@ -257,7 +284,7 @@ private fun BackspaceRootApp(container: AppContainer) {
                         instanceUrl = active.instanceUrl,
                         jwtToken = active.token,
                         username = currentUserLabel,
-                        appVersion = "0.10.0-alpha",
+                        appVersion = "0.11.0-alpha",
                         restClient = container.restClient,
                         wsClient = container.wsClient,
                         voiceEngine = container.voiceEngine,
@@ -285,7 +312,7 @@ private fun BackspaceRootApp(container: AppContainer) {
                                 val repoSlug = context.getString(R.string.updater_repo_slug)
                                 val result = container.releaseUpdater.checkLatestRelease(
                                     repoSlug = repoSlug,
-                                    currentVersion = "0.10.0-alpha",
+                                    currentVersion = "0.11.0-alpha",
                                 )
                                 if (result != null && result.updateAvailable && result.downloadUrl.isNotBlank()) {
                                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(result.downloadUrl)))

@@ -196,11 +196,30 @@ enum class AudioOutputRoute {
     EARPIECE,
 }
 
+enum class TransmissionMode {
+    VOICE_ACTIVITY,
+    PUSH_TO_TALK,
+}
+
+enum class PttHardwareKey {
+    NONE,
+    VOLUME_UP,
+    VOLUME_DOWN,
+}
+
 data class UserAudioPreferences(
     val mode: AudioMode = AudioMode.VOICE,
     val stereo: Boolean = false,
     val bitrateAuto: Boolean = true,
     val manualBitrateKbps: Int = 64,
+    val opusFrameSizeMs: Int = 20, // 10, 20, 40
+    val dataSaverMode: Boolean = false,
+    val transmissionMode: TransmissionMode = TransmissionMode.VOICE_ACTIVITY,
+    val pttHardwareKey: PttHardwareKey = PttHardwareKey.NONE,
+    val vadThreshold: Float = 0.15f,
+    val masterOutputVolume: Float = 1.0f, // 0.0..2.0
+    val audioDuckingEnabled: Boolean = false,
+    val uiSoundsEnabled: Boolean = true,
     val echoCancellation: Boolean = true,
     val noiseSuppression: Boolean = true,
     val autoGainControl: Boolean = true,

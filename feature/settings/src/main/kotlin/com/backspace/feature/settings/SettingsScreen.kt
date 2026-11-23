@@ -35,6 +35,8 @@ import com.backspace.core.designsystem.AetherSurfaceCard
 import com.backspace.core.designsystem.AetherTheme
 import com.backspace.core.model.AudioMode
 import com.backspace.core.model.InstanceAdminSettings
+import com.backspace.core.model.PttHardwareKey
+import com.backspace.core.model.TransmissionMode
 import com.backspace.core.network.BackspaceRestClient
 import com.backspace.core.network.BackspaceWebSocketClient
 import com.backspace.core.voice.BackspaceVoiceEngine
@@ -204,6 +206,87 @@ fun SettingsScreen(
                     )
                 }
 
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = prefs.transmissionMode == TransmissionMode.VOICE_ACTIVITY,
+                        onClick = { voiceEngine.updateUserAudioPreferences { it.copy(transmissionMode = TransmissionMode.VOICE_ACTIVITY) } },
+                        label = { Text("Atividade de Voz (VAD)") },
+                    )
+                    FilterChip(
+                        selected = prefs.transmissionMode == TransmissionMode.PUSH_TO_TALK,
+                        onClick = { voiceEngine.updateUserAudioPreferences { it.copy(transmissionMode = TransmissionMode.PUSH_TO_TALK) } },
+                        label = { Text("Push-to-Talk") },
+                    )
+                }
+
+                if (prefs.transmissionMode == TransmissionMode.PUSH_TO_TALK) {
+                    Spacer(Modifier.height(6.dp))
+                    Text("Tecla física PTT:", style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(
+                            PttHardwareKey.NONE to "Nenhuma",
+                            PttHardwareKey.VOLUME_UP to "Vol +",
+                            PttHardwareKey.VOLUME_DOWN to "Vol -",
+                        ).forEach { (key, label) ->
+                            FilterChip(
+                                selected = prefs.pttHardwareKey == key,
+                                onClick = { voiceEngine.updateUserAudioPreferences { it.copy(pttHardwareKey = key) } },
+                                label = { Text(label) },
+                            )
+                        }
+                    }
+                } else {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "Sensibilidade VAD: ${(prefs.vadThreshold * 100).toInt()}%",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textSecondary,
+                    )
+                    AetherPurpleSlider(
+                        value = prefs.vadThreshold,
+                        onValueChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(vadThreshold = v) } },
+                        valueRange = 0.02f..0.8f,
+                    )
+                }
+
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "Volume mestre de saída: ${(prefs.masterOutputVolume * 100).toInt()}%",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                )
+                AetherPurpleSlider(
+                    value = prefs.masterOutputVolume,
+                    onValueChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(masterOutputVolume = v) } },
+                    valueRange = 0f..2f,
+                )
+
+                Text("Frame size Opus:", style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(10, 20, 40).forEach { ms ->
+                        FilterChip(
+                            selected = prefs.opusFrameSizeMs == ms,
+                            onClick = { voiceEngine.updateUserAudioPreferences { it.copy(opusFrameSizeMs = ms) } },
+                            label = { Text("${ms}ms") },
+                        )
+                    }
+                }
+
+                SettingsToggleRow(
+                    label = "Modo Economia de Dados (4G/5G · 24 kbps)",
+                    checked = prefs.dataSaverMode,
+                    onCheckedChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(dataSaverMode = v) } },
+                )
+                SettingsToggleRow(
+                    label = "Audio Ducking (atenuar sala ao falar)",
+                    checked = prefs.audioDuckingEnabled,
+                    onCheckedChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(audioDuckingEnabled = v) } },
+                )
+                SettingsToggleRow(
+                    label = "Sons de interface (mute/join/leave)",
+                    checked = prefs.uiSoundsEnabled,
+                    onCheckedChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(uiSoundsEnabled = v) } },
+                )
                 SettingsToggleRow(
                     label = "Echo Cancellation (AEC)",
                     checked = prefs.echoCancellation,

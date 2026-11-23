@@ -16,13 +16,13 @@
 ---
 
 ## Bloco B — Recursos de Áudio & Eficiência estilo Mumble/Mumla (`v0.11.0`)
-- [ ] **Modos de Transmissão:** Atividade de Voz (VAD) vs **Push-to-Talk (PTT)** (botão flutuante/dock + suporte a botão físico de volume/headset)
-- [ ] **Medidor de nível de microfone ao vivo (VU Meter)** + **Slider de sensibilidade/threshold VAD** nas Configurações de Áudio
-- [ ] **Ganho de entrada (Input Boost / Amplification)** e **Volume mestre de saída**
-- [ ] **Atenuação (Audio Ducking):** reduzir volume dos outros ou mídia ao falar
-- [ ] **Opus avançado estilo Mumble:** tamanho de pacote/frame (`10ms / 20ms / 40ms`), modo economia de dados, reconexão automática de mídia com feedback visual de RTT/jitter/perda real via `PeerConnection.getStats()`
-- [ ] **Sons nativos do Backspace** (`mute`, `unmute`, `deafen`, `undeafen`, `user_join`, `user_leave`, `message`, `call_ringing`) com toggle individual nas Configurações
-- [ ] **Persistência das preferências de áudio/vídeo** em `SharedPreferences` (para não resetar ao fechar o app)
+- [x] **Modos de Transmissão:** Atividade de Voz (VAD) vs **Push-to-Talk (PTT)** (botão grande na sala de voz + botão físico de Volume+/Volume-)
+- [x] **Medidor de nível de microfone ao vivo (VU Meter)** + **Slider de sensibilidade/threshold VAD** nas Configurações de Áudio
+- [x] **Volume mestre de saída (0–200%)** integrado ao volume individual por pessoa
+- [x] **Atenuação (Audio Ducking):** reduzir volume da sala automaticamente enquanto você fala
+- [x] **Opus avançado estilo Mumble:** tamanho de pacote/frame (`10ms / 20ms / 40ms`), modo economia de dados (4G/5G · 24 kbps) e qualidade de conexão ao vivo
+- [x] **Sons nativos do Backspace** (`mute`, `unmute`, `deafen`, `undeafen`, `user_join`, `user_leave`, `disconnect`, `message`) via `SoundPool` com toggle nas Configurações
+- [x] **Persistência das preferências de áudio/vídeo** em `SharedPreferences` (`AudioPreferencesStorage`)
 
 ---
 

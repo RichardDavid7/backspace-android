@@ -9,6 +9,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,6 +51,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -66,6 +70,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -76,6 +81,7 @@ import com.backspace.core.designsystem.AetherSurfaceCard
 import com.backspace.core.designsystem.AetherTheme
 import com.backspace.core.model.AudioMode
 import com.backspace.core.model.AudioOutputRoute
+import com.backspace.core.model.TransmissionMode
 import com.backspace.core.voice.BackspaceVoiceEngine
 import com.backspace.core.voice.VoiceParticipantUi
 import com.backspace.core.voice.VoiceVideoTile
@@ -423,14 +429,46 @@ fun VoiceRoomScreen(
                 tonalElevation = 4.dp,
                 shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
             ) {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .navigationBarsPadding()
-                        .padding(horizontal = 12.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically,
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
+                    // Botão grande Push-to-Talk (segurar para falar) estilo Mumble/Mumla
+                    if (state.userPrefs.transmissionMode == TransmissionMode.PUSH_TO_TALK) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(54.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(
+                                    if (state.isPttPressed) colors.accentMint else colors.accentPrimary,
+                                )
+                                .pointerInput(Unit) {
+                                    awaitEachGesture {
+                                        awaitFirstDown(requireUnconsumed = false)
+                                        voiceEngine.setPttPressed(true)
+                                        waitForUpOrCancellation()
+                                        voiceEngine.setPttPressed(false)
+                                    }
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = if (state.isPttPressed) "TRANSMITINDO (PTT)" else "SEGURE PARA FALAR (PTT)",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = if (state.isPttPressed) Color.Black else Color.White,
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                     DockControlButton(
                         icon = if (state.isMuted) Icons.Default.MicOff else Icons.Default.Mic,
                         tint = if (state.isMuted) colors.accentPeach else colors.accentMint,
@@ -487,6 +525,7 @@ fun VoiceRoomScreen(
                             onBack()
                         },
                     )
+                    }
                 }
             }
         },
@@ -613,13 +652,24 @@ fun VoiceRoomScreen(
                 }
             }
 
-            // Resumo compacto de telemetria
+            // Resumo compacto de telemetria + VU Meter ao vivo
             AetherSurfaceCard {
                 Text(
-                    text = "Opus ${state.effectiveAudio.bitrateKbps} kbps · ${state.telemetry.channelsMode.name} · " +
+                    text = "Opus ${state.effectiveAudio.bitrateKbps} kbps · ${state.userPrefs.opusFrameSizeMs}ms · " +
+                        "${state.telemetry.channelsMode.name} · ${state.connectionQuality} · " +
                         "DTX ${if (state.effectiveAudio.dtx) "ON" else "OFF"} · RED ${if (state.effectiveAudio.red) "ON" else "OFF"}",
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.textSecondary,
+                )
+                Spacer(Modifier.height(6.dp))
+                LinearProgressIndicator(
+                    progress = { state.micInputLevel.coerceIn(0f, 1f) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(4.dp)),
+                    color = if (state.micInputLevel >= state.userPrefs.vadThreshold) colors.accentMint else colors.accentPrimary,
+                    trackColor = colors.bgBase,
                 )
             }
         }
