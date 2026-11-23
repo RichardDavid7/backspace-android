@@ -38,8 +38,11 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.ScreenShare
 import androidx.compose.material.icons.filled.StopScreenShare
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VideocamOff
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -107,6 +110,7 @@ fun VoiceRoomScreen(
     var fullscreenTileId by remember { mutableStateOf<String?>(null) }
     var isLandscapeForced by remember { mutableStateOf(false) }
     var selectedParticipant by remember { mutableStateOf<VoiceParticipantUi?>(null) }
+    var showAudioDialog by remember { mutableStateOf(false) }
 
     val screenCaptureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
@@ -251,6 +255,104 @@ fun VoiceRoomScreen(
         )
     }
 
+    // Modal rápido de Opus & Telemetria acessível pelo ícone 🎛️ no topo
+    if (showAudioDialog) {
+        AlertDialog(
+            onDismissRequest = { showAudioDialog = false },
+            containerColor = colors.bgChannel,
+            title = { Text(opusTitle, color = colors.textPrimary) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = state.effectiveAudio.mode == AudioMode.VOICE,
+                            onClick = {
+                                voiceEngine.updateUserAudioPreferences { it.copy(mode = AudioMode.VOICE) }
+                            },
+                            label = { Text(voiceModeLabel) },
+                        )
+                        FilterChip(
+                            selected = state.effectiveAudio.mode == AudioMode.MUSIC,
+                            enabled = policy.allowMusicMode,
+                            onClick = {
+                                voiceEngine.updateUserAudioPreferences { it.copy(mode = AudioMode.MUSIC) }
+                            },
+                            label = { Text(musicModeLabel) },
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(text = stereoLabel, color = colors.textPrimary)
+                        Switch(
+                            checked = state.effectiveAudio.stereo,
+                            enabled = policy.allowStereoAudio,
+                            onCheckedChange = { checked ->
+                                voiceEngine.updateUserAudioPreferences { it.copy(stereo = checked) }
+                            },
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(text = "$autoBitrateLabel (${policy.defaultBitrateKbps} kbps)", color = colors.textPrimary)
+                        Switch(
+                            checked = state.userPrefs.bitrateAuto,
+                            onCheckedChange = { checked ->
+                                voiceEngine.updateUserAudioPreferences { it.copy(bitrateAuto = checked) }
+                            },
+                        )
+                    }
+                    if (!state.userPrefs.bitrateAuto) {
+                        val maxRange = policy.maxBitrateKbps.coerceAtLeast(16).toFloat()
+                        Text(
+                            text = "${state.effectiveAudio.bitrateKbps} kbps (max ${policy.maxBitrateKbps} kbps)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.textSecondary,
+                        )
+                        AetherPurpleSlider(
+                            value = state.effectiveAudio.bitrateKbps.toFloat().coerceIn(8f, maxRange),
+                            onValueChange = { v ->
+                                voiceEngine.updateUserAudioPreferences { it.copy(manualBitrateKbps = v.toInt()) }
+                            },
+                            valueRange = 8f..maxRange,
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(text = idleSuspendLabel, color = colors.textPrimary)
+                        Switch(
+                            checked = state.userPrefs.idleSuspendEnabled,
+                            onCheckedChange = { checked ->
+                                voiceEngine.updateUserAudioPreferences { it.copy(idleSuspendEnabled = checked) }
+                            },
+                        )
+                    }
+                    Text(
+                        text = "$telemetryTitle: ${state.telemetry.codec ?: "opus"} · ${state.telemetry.channelsMode.name} · " +
+                            "TX: ${state.telemetry.sendBitrateKbps ?: 0} kbps · " +
+                            "DTX: ${if (state.effectiveAudio.dtx) "ON" else "OFF"} · " +
+                            "RED: ${if (state.effectiveAudio.red) "ON" else "OFF"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textSecondary,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAudioDialog = false }) {
+                    Text("OK", color = colors.accentPrimary)
+                }
+            },
+        )
+    }
+
     Scaffold(
         containerColor = colors.bgBase,
         topBar = {
@@ -261,25 +363,56 @@ fun VoiceRoomScreen(
                     .statusBarsPadding()
                     .padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = colors.textPrimary,
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = colors.textPrimary,
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = state.channelName.ifBlank { "Voice" },
+                            style = MaterialTheme.typography.titleLarge,
+                            color = colors.textPrimary,
+                        )
+                        Text(
+                            text = "${state.spaceName} · Opus ${state.effectiveAudio.bitrateKbps} kbps",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.textSecondary,
+                        )
+                    }
                 }
-                Column {
-                    Text(
-                        text = state.channelName.ifBlank { "Voice" },
-                        style = MaterialTheme.typography.titleLarge,
-                        color = colors.textPrimary,
-                    )
-                    Text(
-                        text = "${state.spaceName} · ${state.status.name}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.textSecondary,
-                    )
+                Row {
+                    // Botão rápido de ocultar/mostrar participantes sem vídeo direto no topo!
+                    IconButton(
+                        onClick = {
+                            voiceEngine.updateUserAudioPreferences {
+                                it.copy(hideNonVideoParticipants = !it.hideNonVideoParticipants)
+                            }
+                        },
+                    ) {
+                        Icon(
+                            imageVector = if (state.userPrefs.hideNonVideoParticipants) {
+                                Icons.Default.VisibilityOff
+                            } else {
+                                Icons.Default.Visibility
+                            },
+                            contentDescription = hideNonVideoLabel,
+                            tint = if (state.userPrefs.hideNonVideoParticipants) colors.accentPrimary else colors.textSecondary,
+                        )
+                    }
+                    // Botão rápido de Opus & Telemetria no topo
+                    IconButton(onClick = { showAudioDialog = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = opusTitle,
+                            tint = colors.textSecondary,
+                        )
+                    }
                 }
             }
         },
@@ -471,119 +604,11 @@ fun VoiceRoomScreen(
                 }
             }
 
+            // Resumo compacto de telemetria
             AetherSurfaceCard {
                 Text(
-                    text = opusTitle,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = colors.textPrimary,
-                )
-                Spacer(Modifier.height(10.dp))
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = state.effectiveAudio.mode == AudioMode.VOICE,
-                        onClick = {
-                            voiceEngine.updateUserAudioPreferences { it.copy(mode = AudioMode.VOICE) }
-                        },
-                        label = { Text(voiceModeLabel) },
-                    )
-                    FilterChip(
-                        selected = state.effectiveAudio.mode == AudioMode.MUSIC,
-                        enabled = policy.allowMusicMode,
-                        onClick = {
-                            voiceEngine.updateUserAudioPreferences { it.copy(mode = AudioMode.MUSIC) }
-                        },
-                        label = { Text(musicModeLabel) },
-                    )
-                }
-
-                Spacer(Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(text = stereoLabel, color = colors.textPrimary)
-                    Switch(
-                        checked = state.effectiveAudio.stereo,
-                        enabled = policy.allowStereoAudio,
-                        onCheckedChange = { checked ->
-                            voiceEngine.updateUserAudioPreferences { it.copy(stereo = checked) }
-                        },
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(text = "$autoBitrateLabel (${policy.defaultBitrateKbps} kbps)", color = colors.textPrimary)
-                    Switch(
-                        checked = state.userPrefs.bitrateAuto,
-                        onCheckedChange = { checked ->
-                            voiceEngine.updateUserAudioPreferences { it.copy(bitrateAuto = checked) }
-                        },
-                    )
-                }
-
-                if (!state.userPrefs.bitrateAuto) {
-                    val maxRange = policy.maxBitrateKbps.coerceAtLeast(16).toFloat()
-                    Text(
-                        text = "${state.effectiveAudio.bitrateKbps} kbps (max ${policy.maxBitrateKbps} kbps)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.textSecondary,
-                    )
-                    AetherPurpleSlider(
-                        value = state.effectiveAudio.bitrateKbps.toFloat().coerceIn(8f, maxRange),
-                        onValueChange = { v ->
-                            voiceEngine.updateUserAudioPreferences { it.copy(manualBitrateKbps = v.toInt()) }
-                        },
-                        valueRange = 8f..maxRange,
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(text = idleSuspendLabel, color = colors.textPrimary)
-                    Switch(
-                        checked = state.userPrefs.idleSuspendEnabled,
-                        onCheckedChange = { checked ->
-                            voiceEngine.updateUserAudioPreferences { it.copy(idleSuspendEnabled = checked) }
-                        },
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(text = hideNonVideoLabel, color = colors.textPrimary)
-                    Switch(
-                        checked = state.userPrefs.hideNonVideoParticipants,
-                        onCheckedChange = { checked ->
-                            voiceEngine.updateUserAudioPreferences { it.copy(hideNonVideoParticipants = checked) }
-                        },
-                    )
-                }
-            }
-
-            AetherSurfaceCard {
-                Text(
-                    text = telemetryTitle,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = colors.textPrimary,
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = "Codec: ${state.telemetry.codec ?: "opus"} · ${state.telemetry.channelsMode.name} · " +
-                        "TX: ${state.telemetry.sendBitrateKbps ?: 0} kbps · " +
-                        "DTX: ${if (state.effectiveAudio.dtx) "ON" else "OFF"} · " +
-                        "RED: ${if (state.effectiveAudio.red) "ON" else "OFF"}",
+                    text = "Opus ${state.effectiveAudio.bitrateKbps} kbps · ${state.telemetry.channelsMode.name} · " +
+                        "DTX ${if (state.effectiveAudio.dtx) "ON" else "OFF"} · RED ${if (state.effectiveAudio.red) "ON" else "OFF"}",
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.textSecondary,
                 )

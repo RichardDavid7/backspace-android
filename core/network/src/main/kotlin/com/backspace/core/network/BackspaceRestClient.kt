@@ -57,6 +57,8 @@ data class SendMessageRequest(
 
 @Serializable
 data class UpdateMeRequest(
+    val displayName: String? = null,
+    val bio: String? = null,
     val status: String? = null,
     val customStatus: String? = null,
 )
@@ -363,6 +365,8 @@ class BackspaceRestClient(
     suspend fun updateMyStatus(
         instanceUrl: String,
         token: String,
+        displayName: String? = null,
+        bio: String? = null,
         status: String? = null,
         customStatus: String? = null,
     ): User {
@@ -371,7 +375,12 @@ class BackspaceRestClient(
             url = "$base/api/users/@me",
             body = json.encodeToString(
                 UpdateMeRequest.serializer(),
-                UpdateMeRequest(status = status, customStatus = customStatus),
+                UpdateMeRequest(
+                    displayName = displayName,
+                    bio = bio,
+                    status = status,
+                    customStatus = customStatus,
+                ),
             ),
             token = token,
         )

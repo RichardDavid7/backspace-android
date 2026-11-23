@@ -553,13 +553,14 @@ class BackspaceVoiceEngine(
 
     private fun createConfiguredRoom(effective: EffectiveAudioConfig): Room {
         val isMusic = effective.mode == AudioMode.MUSIC
+        val prefs = _state.value.userPrefs
         val options = RoomOptions(
             adaptiveStream = true,
             dynacast = true,
             audioTrackCaptureDefaults = LocalAudioTrackOptions(
-                noiseSuppression = !isMusic,
-                echoCancellation = !isMusic,
-                autoGainControl = !isMusic,
+                noiseSuppression = !isMusic && prefs.noiseSuppression,
+                echoCancellation = !isMusic && prefs.echoCancellation,
+                autoGainControl = !isMusic && prefs.autoGainControl,
             ),
             audioTrackPublishDefaults = AudioTrackPublishDefaults(
                 audioBitrate = effective.maxBitrateBps,

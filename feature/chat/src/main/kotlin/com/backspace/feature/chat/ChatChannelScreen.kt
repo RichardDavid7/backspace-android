@@ -46,6 +46,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
@@ -111,6 +112,11 @@ fun ChatChannelScreen(
     replyingToPrefix: String,
     replyActionLabel: String,
     deleteActionLabel: String,
+    isDm: Boolean = false,
+    callConfirmTitle: String = "",
+    callConfirmAction: String = "Call",
+    cancelLabel: String = "Cancel",
+    onStartCall: (() -> Unit)? = null,
     onBack: () -> Unit,
 ) {
     val colors = AetherTheme.colors
@@ -141,6 +147,7 @@ fun ChatChannelScreen(
     var replyingTo by remember { mutableStateOf<Message?>(null) }
     var selectedMessageForActions by remember { mutableStateOf<Message?>(null) }
     var fullscreenImageUrl by remember { mutableStateOf<String?>(null) }
+    var showCallConfirmDialog by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf<String?>(null) }
     val pendingAttachments = remember { mutableStateListOf<PendingAttachmentPayload>() }
 
@@ -189,11 +196,16 @@ fun ChatChannelScreen(
         }
     }
 
-    LaunchedEffect(channelId) {
+    LaunchedEffect(channelId, isDm) {
         runCatching {
-            val history = restClient.getChannelMessages(instanceUrl, jwtToken, channelId)
-            wsClient.mergeChannelHistory(channelId, history)
-            wsClient.sendChannelAck(channelId)
+            if (isDm) {
+                val history = restClient.getDmMessages(instanceUrl, jwtToken, channelId)
+                wsClient.mergeChannelHistory(channelId, history.map { it.toChannelMessage() })
+            } else {
+                val history = restClient.getChannelMessages(instanceUrl, jwtToken, channelId)
+                wsClient.mergeChannelHistory(channelId, history)
+                wsClient.sendChannelAck(channelId)
+            }
         }.onFailure { err ->
             errorText = err.message
         }
@@ -253,6 +265,30 @@ fun ChatChannelScreen(
             }
         }
         return
+    }
+
+    if (showCallConfirmDialog && onStartCall != null) {
+        AlertDialog(
+            onDismissRequest = { showCallConfirmDialog = false },
+            containerColor = colors.bgChannel,
+            title = { Text(callConfirmTitle.ifBlank { channelName }, color = colors.textPrimary) },
+            text = { Text(channelName, color = colors.textSecondary) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showCallConfirmDialog = false
+                        onStartCall()
+                    },
+                ) {
+                    Text(callConfirmAction, color = colors.accentMint)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCallConfirmDialog = false }) {
+                    Text(cancelLabel, color = colors.textSecondary)
+                }
+            },
+        )
     }
 
     // Menu de interações da mensagem (Reagir, Responder, Apagar)
@@ -319,7 +355,11 @@ fun ChatChannelScreen(
                                     selectedMessageForActions = null
                                     scope.launch {
                                         runCatching {
-                                            restClient.deleteMessage(instanceUrl, jwtToken, msgId)
+                                            if (isDm) {
+                                                restClient.deleteDmMessage(instanceUrl, jwtToken, msgId)
+                                            } else {
+                                                restClient.deleteMessage(instanceUrl, jwtToken, msgId)
+                                            }
                                             wsClient.removeLocalMessage(channelId, msgId)
                                         }.onFailure { err -> errorText = err.message }
                                     }
@@ -353,19 +393,33 @@ fun ChatChannelScreen(
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    tint = colors.textPrimary,
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = colors.textPrimary,
+                    )
+                }
+                Text(
+                    text = if (isDm) channelName else "# $channelName",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = colors.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
-            Text(
-                text = "# $channelName",
-                style = MaterialTheme.typography.titleLarge,
-                color = colors.textPrimary,
-            )
+            if (isDm && onStartCall != null) {
+                IconButton(onClick = { showCallConfirmDialog = true }) {
+                    Icon(
+                        imageVector = Icons.Default.Call,
+                        contentDescription = "Call",
+                        tint = colors.accentMint,
+                    )
+                }
+            }
         }
 
         if (!errorText.isNullOrBlank()) {
@@ -431,51 +485,30 @@ fun ChatChannelScreen(
                             }
                         }
 
-                        // Cabeçalho: avatar pequeno + nome (à direita nas suas mensagens, à esquerda nos outros)
+                        // Cabeçalho: avatar pequeno + nome sempre à esquerda, hora à direita
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            if (isMine) {
-                                Text(
-                                    text = formattedTime,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = colors.textTertiary,
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                AetherAvatar(
+                                    imageUrl = msg.user?.avatarUrl(instanceUrl),
+                                    fallbackLabel = msg.authorLabel,
+                                    size = 24.dp,
                                 )
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = msg.authorLabel,
-                                        style = MaterialTheme.typography.labelLarge,
-                                        color = authorColor,
-                                    )
-                                    Spacer(Modifier.width(6.dp))
-                                    AetherAvatar(
-                                        imageUrl = msg.user?.avatarUrl(instanceUrl),
-                                        fallbackLabel = msg.authorLabel,
-                                        size = 24.dp,
-                                    )
-                                }
-                            } else {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    AetherAvatar(
-                                        imageUrl = msg.user?.avatarUrl(instanceUrl),
-                                        fallbackLabel = msg.authorLabel,
-                                        size = 24.dp,
-                                    )
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(
-                                        text = msg.authorLabel,
-                                        style = MaterialTheme.typography.labelLarge,
-                                        color = authorColor,
-                                    )
-                                }
+                                Spacer(Modifier.width(6.dp))
                                 Text(
-                                    text = formattedTime,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = colors.textTertiary,
+                                    text = msg.authorLabel,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = authorColor,
                                 )
                             }
+                            Text(
+                                text = formattedTime,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.textTertiary,
+                            )
                         }
 
                         if (msg.safeContent.isNotBlank()) {
@@ -722,6 +755,7 @@ fun ChatChannelScreen(
                         content = contentToSend,
                         replyToId = replyId,
                         attachments = attsToSend,
+                        isDm = isDm,
                     )
                 },
             ) {

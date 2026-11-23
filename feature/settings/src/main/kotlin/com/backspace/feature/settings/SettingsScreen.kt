@@ -122,13 +122,69 @@ fun SettingsScreen(
         }
 
         if (selectedTab == 0 || !isInstanceAdmin) {
-            // ── ABA USUÁRIO ──
+            // ── ABA USUÁRIO: Perfil editável + Processamento de Áudio + Opus + Vídeo ──
+            val me = snapshot.currentUser
+            var displayName by remember(me?.displayName) { mutableStateOf(me?.displayName.orEmpty()) }
+            var bio by remember(me?.bio) { mutableStateOf(me?.bio.orEmpty()) }
+            var customStatus by remember(me?.customStatus) { mutableStateOf(me?.customStatus.orEmpty()) }
+            var profileMsg by remember { mutableStateOf<String?>(null) }
+
             AetherSurfaceCard {
                 Text(text = accountHeader, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
                 Spacer(Modifier.height(6.dp))
-                Text(text = username, color = colors.accentMint, style = MaterialTheme.typography.bodyMedium)
+                Text(text = "$username · v$appVersion", color = colors.accentMint, style = MaterialTheme.typography.bodySmall)
                 Text(text = instanceUrl, color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
-                Text(text = "v$appVersion", color = colors.textTertiary, style = MaterialTheme.typography.labelSmall)
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = displayName,
+                    onValueChange = { displayName = it },
+                    label = { Text("Display name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = customStatus,
+                    onValueChange = { customStatus = it },
+                    label = { Text("Custom status") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = bio,
+                    onValueChange = { bio = it },
+                    label = { Text("Bio") },
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 3,
+                )
+                if (!profileMsg.isNullOrBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(profileMsg!!, color = colors.accentMint, style = MaterialTheme.typography.bodySmall)
+                }
+                Spacer(Modifier.height(8.dp))
+                AetherPrimaryButton(
+                    text = saveLabel,
+                    onClick = {
+                        scope.launch {
+                            profileMsg = null
+                            runCatching {
+                                restClient.updateMyStatus(
+                                    instanceUrl = instanceUrl,
+                                    token = jwtToken,
+                                    displayName = displayName.trim().ifBlank { null },
+                                    bio = bio.trim().ifBlank { null },
+                                    customStatus = customStatus.trim().ifBlank { null },
+                                )
+                            }.onSuccess { updated ->
+                                wsClient.updateCurrentUserLocal(updated)
+                                profileMsg = "OK"
+                            }.onFailure { err ->
+                                profileMsg = err.message
+                            }
+                        }
+                    },
+                )
             }
 
             AetherSurfaceCard {
@@ -148,6 +204,21 @@ fun SettingsScreen(
                     )
                 }
 
+                SettingsToggleRow(
+                    label = "Echo Cancellation (AEC)",
+                    checked = prefs.echoCancellation,
+                    onCheckedChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(echoCancellation = v) } },
+                )
+                SettingsToggleRow(
+                    label = "Noise Suppression (NS)",
+                    checked = prefs.noiseSuppression,
+                    onCheckedChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(noiseSuppression = v) } },
+                )
+                SettingsToggleRow(
+                    label = "Auto Gain Control (AGC)",
+                    checked = prefs.autoGainControl,
+                    onCheckedChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(autoGainControl = v) } },
+                )
                 SettingsToggleRow(
                     label = stereoLabel,
                     checked = prefs.stereo,

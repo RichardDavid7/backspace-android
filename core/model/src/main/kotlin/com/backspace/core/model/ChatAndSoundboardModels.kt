@@ -74,6 +74,7 @@ data class PendingAttachmentPayload(
 data class QueuedOutgoingMessage(
     val localId: String,
     val channelId: String,
+    val isDm: Boolean = false,
     val content: String?,
     val replyToId: String? = null,
     val attachments: List<PendingAttachmentPayload> = emptyList(),

@@ -47,7 +47,6 @@ import com.backspace.core.model.PermissionBits
 import com.backspace.core.network.StoredSession
 import com.backspace.feature.auth.AuthScreen
 import com.backspace.feature.chat.ChatChannelScreen
-import com.backspace.feature.dm.DmChatScreen
 import com.backspace.feature.dm.DmListScreen
 import com.backspace.feature.settings.SettingsScreen
 import com.backspace.feature.soundboard.SoundboardScreen
@@ -217,15 +216,6 @@ private fun BackspaceRootApp(container: AppContainer) {
                             val encoded = Uri.encode(dm.displayTitle(myId))
                             navController.navigate("dm/${dm.id}/$encoded")
                         },
-                        onStartDmCall = { dm ->
-                            container.voiceEngine.joinDmCall(
-                                instanceUrl = active.instanceUrl,
-                                jwtToken = active.token,
-                                dmChannelId = dm.id,
-                                dmTitle = dm.displayTitle(myId),
-                            )
-                            navController.navigate("voice")
-                        },
                         modifier = tabModifier,
                     )
 
@@ -233,7 +223,7 @@ private fun BackspaceRootApp(container: AppContainer) {
                         instanceUrl = active.instanceUrl,
                         jwtToken = active.token,
                         username = currentUserLabel,
-                        appVersion = "0.6.0-alpha",
+                        appVersion = "0.7.0-alpha",
                         restClient = container.restClient,
                         wsClient = container.wsClient,
                         voiceEngine = container.voiceEngine,
@@ -261,7 +251,7 @@ private fun BackspaceRootApp(container: AppContainer) {
                                 val repoSlug = context.getString(R.string.updater_repo_slug)
                                 val result = container.releaseUpdater.checkLatestRelease(
                                     repoSlug = repoSlug,
-                                    currentVersion = "0.6.0-alpha",
+                                    currentVersion = "0.7.0-alpha",
                                 )
                                 if (result != null && result.updateAvailable && result.downloadUrl.isNotBlank()) {
                                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(result.downloadUrl)))
@@ -295,15 +285,23 @@ private fun BackspaceRootApp(container: AppContainer) {
             val active = session ?: return@composable
             val dmId = backStackEntry.arguments?.getString("dmId").orEmpty()
             val dmTitle = Uri.decode(backStackEntry.arguments?.getString("dmTitle").orEmpty())
-            DmChatScreen(
+            ChatChannelScreen(
                 instanceUrl = active.instanceUrl,
                 jwtToken = active.token,
-                dmChannelId = dmId,
-                dmTitle = dmTitle,
+                channelId = dmId,
+                channelName = dmTitle,
                 restClient = container.restClient,
                 wsClient = container.wsClient,
                 messagePlaceholder = stringResource(R.string.chat_message_placeholder),
-                emptyText = stringResource(R.string.chat_empty),
+                emptyChatText = stringResource(R.string.chat_empty),
+                queuedLabel = stringResource(R.string.chat_queued_offline),
+                replyingToPrefix = stringResource(R.string.chat_replying_to),
+                replyActionLabel = stringResource(R.string.chat_action_reply),
+                deleteActionLabel = stringResource(R.string.chat_action_delete),
+                isDm = true,
+                callConfirmTitle = stringResource(R.string.dm_call_confirm_title),
+                callConfirmAction = stringResource(R.string.dm_call_confirm_action),
+                cancelLabel = stringResource(R.string.common_cancel),
                 onStartCall = {
                     container.voiceEngine.joinDmCall(
                         instanceUrl = active.instanceUrl,

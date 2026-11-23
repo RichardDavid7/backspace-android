@@ -288,15 +288,21 @@ class BackspaceWebSocketClient(
      * Envia mensagem (com eventuais anexos) imediatamente se online, ou coloca na fila offline
      * e envia automaticamente assim que reconectar.
      */
+    fun updateCurrentUserLocal(user: User) {
+        _snapshot.update { it.copy(currentUser = user) }
+    }
+
     fun enqueueOrSendMessage(
         channelId: String,
         content: String?,
         replyToId: String? = null,
         attachments: List<PendingAttachmentPayload> = emptyList(),
+        isDm: Boolean = false,
     ) {
         val queued = QueuedOutgoingMessage(
             localId = UUID.randomUUID().toString(),
             channelId = channelId,
+            isDm = isDm,
             content = content?.trim()?.ifBlank { null },
             replyToId = replyToId,
             attachments = attachments,
@@ -325,14 +331,25 @@ class BackspaceWebSocketClient(
                             bytes = att.bytes,
                         ).id
                     }
-                    restClient.sendMessage(
-                        instanceUrl = url,
-                        token = token,
-                        channelId = next.channelId,
-                        content = next.content,
-                        attachmentIds = uploadedIds,
-                        replyToId = next.replyToId,
-                    )
+                    if (next.isDm) {
+                        restClient.sendDmMessage(
+                            instanceUrl = url,
+                            token = token,
+                            dmChannelId = next.channelId,
+                            content = next.content,
+                            attachmentIds = uploadedIds,
+                            replyToId = next.replyToId,
+                        ).toChannelMessage()
+                    } else {
+                        restClient.sendMessage(
+                            instanceUrl = url,
+                            token = token,
+                            channelId = next.channelId,
+                            content = next.content,
+                            attachmentIds = uploadedIds,
+                            replyToId = next.replyToId,
+                        )
+                    }
                 }
                 val sent = result.getOrNull()
                 if (sent != null) {

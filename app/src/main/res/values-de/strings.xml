@@ -53,6 +53,8 @@
     <string name="dm_group_badge">Gruppe</string>
     <string name="dm_send_message">DM senden</string>
     <string name="dm_tab_label">Nachrichten</string>
+    <string name="dm_call_confirm_title">Anruf starten?</string>
+    <string name="dm_call_confirm_action">Anrufen</string>
     <string name="settings_tab_user">Benutzer</string>
     <string name="settings_tab_instance">Instanz</string>
     <string name="settings_instance_general">Allgemein &amp; Registrierung</string>

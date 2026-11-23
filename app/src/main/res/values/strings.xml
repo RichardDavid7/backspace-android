@@ -53,6 +53,8 @@
     <string name="dm_group_badge">Group</string>
     <string name="dm_send_message">Send DM</string>
     <string name="dm_tab_label">Messages</string>
+    <string name="dm_call_confirm_title">Start call?</string>
+    <string name="dm_call_confirm_action">Call</string>
     <string name="settings_tab_user">User</string>
     <string name="settings_tab_instance">Instance</string>
     <string name="settings_instance_general">General &amp; Registration</string>
