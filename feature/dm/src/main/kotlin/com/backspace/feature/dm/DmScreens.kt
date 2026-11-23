@@ -79,6 +79,7 @@ fun DmListScreen(
     var addUsername by remember { mutableStateOf("") }
     var socialFeedback by remember { mutableStateOf<String?>(null) }
     var showCreateGroupDialog by remember { mutableStateOf(false) }
+    var friendPendingRemove by remember { mutableStateOf<FriendItem?>(null) }
 
     fun reloadSocial() {
         scope.launch {
@@ -153,6 +154,39 @@ fun DmListScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showCreateGroupDialog = false }) {
+                    Text("Cancelar", color = colors.textSecondary)
+                }
+            },
+        )
+    }
+
+    friendPendingRemove?.let { targetFriend ->
+        AlertDialog(
+            onDismissRequest = { friendPendingRemove = null },
+            containerColor = colors.bgChannel,
+            title = { Text("Remover amigo?", color = colors.textPrimary) },
+            text = {
+                Text(
+                    text = "Tem certeza que deseja remover ${targetFriend.label} da sua lista de amigos?",
+                    color = colors.textSecondary,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val userId = targetFriend.targetUserId
+                        friendPendingRemove = null
+                        scope.launch {
+                            runCatching { restClient.removeFriend(instanceUrl, jwtToken, userId) }
+                            reloadSocial()
+                        }
+                    },
+                ) {
+                    Text("Remover", color = colors.accentPeach)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { friendPendingRemove = null }) {
                     Text("Cancelar", color = colors.textSecondary)
                 }
             },
@@ -396,12 +430,7 @@ fun DmListScreen(
                                 }
                             }
                             IconButton(
-                                onClick = {
-                                    scope.launch {
-                                        runCatching { restClient.removeFriend(instanceUrl, jwtToken, friend.targetUserId) }
-                                        reloadSocial()
-                                    }
-                                },
+                                onClick = { friendPendingRemove = friend },
                             ) {
                                 Icon(Icons.Default.Delete, contentDescription = "Remove friend", tint = colors.accentPeach)
                             }

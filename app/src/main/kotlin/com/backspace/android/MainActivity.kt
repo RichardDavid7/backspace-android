@@ -17,6 +17,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
@@ -64,6 +65,7 @@ import com.backspace.feature.dm.DmListScreen
 import com.backspace.feature.settings.SettingsScreen
 import com.backspace.feature.soundboard.SoundboardScreen
 import com.backspace.feature.spaces.SpacesScreen
+import com.backspace.feature.voice.GlobalVoiceMiniBar
 import com.backspace.feature.voice.VoiceRoomScreen
 import kotlinx.coroutines.launch
 
@@ -241,13 +243,21 @@ private fun BackspaceRootApp(container: AppContainer) {
             val active = session ?: return@composable
             val colors = AetherTheme.colors
             val snap by container.wsClient.snapshot.collectAsStateWithLifecycle()
+            val voiceState by container.voiceEngine.state.collectAsStateWithLifecycle()
             val myId = snap.currentUser?.id
-            val currentUserLabel = snap.currentUser?.label ?: "-"
 
             Scaffold(
                 containerColor = colors.bgBase,
                 bottomBar = {
-                    NavigationBar(containerColor = colors.bgChannel) {
+                    Column {
+                        GlobalVoiceMiniBar(
+                            voiceState = voiceState,
+                            onOpenVoiceRoom = { navController.navigate("voice") },
+                            onToggleMute = { container.voiceEngine.toggleMute() },
+                            onToggleDeafen = { container.voiceEngine.toggleDeafen() },
+                            onLeaveCall = { container.voiceEngine.leaveChannel() },
+                        )
+                        NavigationBar(containerColor = colors.bgChannel) {
                         NavigationBarItem(
                             selected = homeTab == 0,
                             onClick = { homeTab = 0 },
@@ -290,6 +300,7 @@ private fun BackspaceRootApp(container: AppContainer) {
                             icon = { Icon(Icons.Default.Settings, contentDescription = null) },
                             label = { Text(stringResource(R.string.settings_title)) },
                         )
+                    }
                     }
                 },
             ) { innerPadding ->
@@ -356,49 +367,24 @@ private fun BackspaceRootApp(container: AppContainer) {
                             navController.navigate("voice")
                         },
                         onOpenActiveVoice = { navController.navigate("voice") },
+                        showVoiceBanner = false,
                         modifier = tabModifier,
                     )
 
                     else -> SettingsScreen(
                         instanceUrl = active.instanceUrl,
                         jwtToken = active.token,
-                        username = currentUserLabel,
-                        appVersion = "0.13.1-alpha",
+                        appVersion = BuildConfig.VERSION_NAME,
+                        repoSlug = stringResource(R.string.updater_repo_slug),
                         restClient = container.restClient,
                         wsClient = container.wsClient,
                         voiceEngine = container.voiceEngine,
+                        updater = container.releaseUpdater,
                         title = stringResource(R.string.settings_title),
-                        userTabLabel = stringResource(R.string.settings_tab_user),
-                        instanceTabLabel = stringResource(R.string.settings_tab_instance),
-                        accountHeader = stringResource(R.string.settings_account),
-                        audioHeader = stringResource(R.string.voice_opus_title),
-                        videoHeader = stringResource(R.string.settings_video),
-                        instanceGeneralHeader = stringResource(R.string.settings_instance_general),
-                        instanceFederationHeader = stringResource(R.string.settings_instance_federation),
-                        instanceStreamingHeader = stringResource(R.string.settings_instance_streaming),
-                        voiceModeLabel = stringResource(R.string.voice_mode_voice),
-                        musicModeLabel = stringResource(R.string.voice_mode_music),
-                        stereoLabel = stringResource(R.string.voice_stereo),
-                        autoBitrateLabel = stringResource(R.string.voice_bitrate_auto),
-                        idleSuspendLabel = stringResource(R.string.voice_idle_suspend),
-                        soundboardVolumeLabel = stringResource(R.string.soundboard_volume),
-                        hideNonVideoLabel = stringResource(R.string.voice_hide_non_video),
-                        checkUpdatesLabel = stringResource(R.string.settings_check_updates),
-                        saveLabel = stringResource(R.string.common_save),
                         logoutLabel = stringResource(R.string.settings_logout),
-                        onCheckUpdates = {
-                            scope.launch {
-                                val repoSlug = context.getString(R.string.updater_repo_slug)
-                                val result = container.releaseUpdater.checkLatestRelease(
-                                    repoSlug = repoSlug,
-                                    currentVersion = "0.13.1-alpha",
-                                )
-                                if (result != null && result.updateAvailable && result.downloadUrl.isNotBlank()) {
-                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(result.downloadUrl)))
-                                } else {
-                                    Toast.makeText(context, updateUpToDateText, Toast.LENGTH_SHORT).show()
-                                }
-                            }
+                        onTokenUpdated = { newToken ->
+                            container.sessionStorage.save(active.instanceUrl, newToken)
+                            session = StoredSession(active.instanceUrl, newToken)
                         },
                         onLogout = {
                             container.voiceEngine.leaveChannel()

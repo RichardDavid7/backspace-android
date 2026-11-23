@@ -174,6 +174,7 @@ fun ChatChannelScreen(
     var replyingTo by remember { mutableStateOf<Message?>(null) }
     var editingMessage by remember { mutableStateOf<Message?>(null) }
     var selectedMessageForActions by remember { mutableStateOf<Message?>(null) }
+    var messagePendingDelete by remember { mutableStateOf<Message?>(null) }
     var fullscreenImageUrl by remember { mutableStateOf<String?>(null) }
     var showCallConfirmDialog by remember { mutableStateOf(false) }
     var showMediaPicker by remember { mutableStateOf(false) }
@@ -259,10 +260,18 @@ fun ChatChannelScreen(
         }
     }
 
-    LaunchedEffect(messages.size, queuedForChannel.size) {
+    val lastMessageId = messages.lastOrNull()?.id
+    val lastQueuedId = queuedForChannel.lastOrNull()?.localId
+    var previousLastKey by remember(channelId) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(channelId, lastMessageId, lastQueuedId) {
+        val currentLastKey = lastQueuedId ?: lastMessageId
         val total = messages.size + queuedForChannel.size
-        if (total > 0) {
-            listState.animateScrollToItem(total - 1)
+        if (total > 0 && currentLastKey != null && currentLastKey != previousLastKey) {
+            previousLastKey = currentLastKey
+            val hasLoadOlder = !isDm && allMessages.size >= 50 && !showSearchBar
+            val targetIndex = (total - 1) + if (hasLoadOlder) 1 else 0
+            listState.animateScrollToItem(targetIndex)
         }
     }
 
@@ -492,18 +501,8 @@ fun ChatChannelScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    val msgId = targetMsg.id
                                     selectedMessageForActions = null
-                                    scope.launch {
-                                        runCatching {
-                                            if (isDm) {
-                                                restClient.deleteDmMessage(instanceUrl, jwtToken, msgId)
-                                            } else {
-                                                restClient.deleteMessage(instanceUrl, jwtToken, msgId)
-                                            }
-                                            wsClient.removeLocalMessage(channelId, msgId)
-                                        }.onFailure { err -> errorText = err.message }
-                                    }
+                                    messagePendingDelete = targetMsg
                                 }
                                 .padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -518,6 +517,45 @@ fun ChatChannelScreen(
             confirmButton = {
                 TextButton(onClick = { selectedMessageForActions = null }) {
                     Text("OK", color = colors.textSecondary)
+                }
+            },
+        )
+    }
+
+    messagePendingDelete?.let { msgToDelete ->
+        AlertDialog(
+            onDismissRequest = { messagePendingDelete = null },
+            containerColor = colors.bgChannel,
+            title = { Text("Apagar mensagem?", color = colors.textPrimary) },
+            text = {
+                Text(
+                    text = "Tem certeza que deseja apagar esta mensagem? Esta ação não pode ser desfeita.",
+                    color = colors.textSecondary,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val msgId = msgToDelete.id
+                        messagePendingDelete = null
+                        scope.launch {
+                            runCatching {
+                                if (isDm) {
+                                    restClient.deleteDmMessage(instanceUrl, jwtToken, msgId)
+                                } else {
+                                    restClient.deleteMessage(instanceUrl, jwtToken, msgId)
+                                }
+                                wsClient.removeLocalMessage(channelId, msgId)
+                            }.onFailure { err -> errorText = err.message }
+                        }
+                    },
+                ) {
+                    Text(deleteActionLabel, color = colors.accentPeach)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { messagePendingDelete = null }) {
+                    Text(cancelLabel, color = colors.textSecondary)
                 }
             },
         )
@@ -1264,6 +1302,7 @@ private fun MediaPickerDialog(
     var gifQuery by remember { mutableStateOf("") }
     var gifs by remember { mutableStateOf<List<GifItem>>(emptyList()) }
     var stickers by remember { mutableStateOf<List<StickerItem>>(emptyList()) }
+    var stickerPendingDelete by remember { mutableStateOf<StickerItem?>(null) }
     var statusText by remember { mutableStateOf<String?>(null) }
 
     val stickerUploadLauncher = rememberLauncherForActivityResult(
@@ -1406,14 +1445,7 @@ private fun MediaPickerDialog(
                                                     .background(colors.bgBase)
                                                     .combinedClickable(
                                                         onClick = { onSendUrl(stToken) },
-                                                        onLongClick = {
-                                                            scope.launch {
-                                                                runCatching {
-                                                                    restClient.deleteSticker(instanceUrl, jwtToken, st.id)
-                                                                    stickers = stickers.filterNot { it.id == st.id }
-                                                                }.onFailure { statusText = it.message }
-                                                            }
-                                                        },
+                                                        onLongClick = { stickerPendingDelete = st },
                                                     ),
                                             )
                                         }
@@ -1432,6 +1464,42 @@ private fun MediaPickerDialog(
             }
         },
     )
+
+    stickerPendingDelete?.let { stToDelete ->
+        AlertDialog(
+            onDismissRequest = { stickerPendingDelete = null },
+            containerColor = colors.bgChannel,
+            title = { Text("Excluir figurinha?", color = colors.textPrimary) },
+            text = {
+                val stickerLabel = stToDelete.name.ifBlank { "esta figurinha" }
+                Text(
+                    text = "Deseja excluir \"$stickerLabel\"? Esta ação não pode ser desfeita.",
+                    color = colors.textSecondary,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val targetId = stToDelete.id
+                        stickerPendingDelete = null
+                        scope.launch {
+                            runCatching {
+                                restClient.deleteSticker(instanceUrl, jwtToken, targetId)
+                                stickers = stickers.filterNot { it.id == targetId }
+                            }.onFailure { statusText = it.message }
+                        }
+                    },
+                ) {
+                    Text("Excluir", color = colors.accentPeach)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { stickerPendingDelete = null }) {
+                    Text("Cancelar", color = colors.textSecondary)
+                }
+            },
+        )
+    }
 }
 
 private suspend fun readUriPayload(

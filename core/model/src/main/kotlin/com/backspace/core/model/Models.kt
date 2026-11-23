@@ -38,6 +38,11 @@ data class InstanceAdminSettings(
     val autoAcceptPeering: Boolean = false,
     val directoryEnabled: Boolean = false,
     val directoryBrowseEnabled: Boolean = false,
+    val gifApiKey: String? = null,
+    val supportCardEnabled: Boolean = true,
+    val directoryLastPingAt: Long? = null,
+    val directoryLastError: String? = null,
+    val directoryListedSpaceCount: Int = 0,
 )
 
 @Serializable
@@ -54,6 +59,12 @@ data class InstanceStreamingLimits(
     val soundboardEnabled: Boolean = true,
     val maxSoundboardSoundsPerScope: Int = 50,
     val maxConcurrentSoundboardSounds: Int = 3,
+    val bitrateStepKbps: Int = 500,
+    val allowedResolutions: List<String> = emptyList(),
+    val allowedFramerates: List<Int> = emptyList(),
+    val discoveryEnabled: Boolean = true,
+    val directoryEnabled: Boolean = false,
+    val directoryConfigured: Boolean = false,
 )
 
 @Serializable
@@ -69,9 +80,15 @@ data class User(
     val status: String = "online",
     val customStatus: String? = null,
     val isAdmin: Boolean = false,
+    val discoverable: Boolean = true,
+    val showActivity: Boolean = true,
+    val homeInstance: String? = null,
+    val federationHomeOrphaned: Boolean = false,
+    val detachedHomeInstance: String? = null,
 ) {
     val label: String get() = displayName?.takeIf { it.isNotBlank() } ?: username
     fun avatarUrl(instanceUrl: String): String? = UploadUrlResolver.resolve(instanceUrl, avatar)
+    fun bannerUrl(instanceUrl: String): String? = UploadUrlResolver.resolve(instanceUrl, banner)
 }
 
 @Serializable

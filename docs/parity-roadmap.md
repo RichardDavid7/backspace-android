@@ -1,53 +1,61 @@
 # Checklist Mestre de Paridade — Backspace Android (Web + Mumble/Mumla)
 
 > **Regra de versionamento (SemVer a partir de `0.10.0`):**
-> - **Patch (`0.10.1`, `0.10.2`...):** correções de bugs, ajustes visuais ou melhorias pontuais.
-> - **Minor (`0.11.0`, `0.12.0`...):** novos blocos relevantes de recursos ou novos módulos.
-> - **Major (`1.0.0`):** paridade completa atingida e estável.
+> - **Patch (`0.14.1`, `0.14.2`...):** correções de bugs, ajustes visuais ou melhorias pontuais.
+> - **Minor (`0.14.0`, `0.15.0`...):** novas fases de paridade completa.
+> - **Major (`1.0.0`):** paridade completa com a versão web atingida e estável.
 
 ---
 
-## Bloco A — Navegação, Não Lidas, Menções & Figurinhas (`v0.10.0`)
-- [x] Página principal = **Mensagens** (`Mensagens | Espaços | Configurações`)
-- [x] Bolinha/badge de **mensagens não lidas** nas DMs e no ícone **Mensagens** da barra inferior
-- [x] Bolinha/badge de **menções** no ícone **Espaços**, no seletor de cada Espaço e no canal com menção
-- [x] Envio e renderização correta de **Figurinhas** (`sticker:<url>` WebP) no Chat e DMs
+## Blocos Concluídos (`v0.10.0` – `v0.13.1`)
+- [x] **Bloco A (`v0.10.0`):** Navegação (Mensagens home), badges de não lidas em DMs, badges de menções em Espaços/Canais, Figurinhas WebP.
+- [x] **Bloco B (`v0.11.0`):** Áudio estilo Mumble/Mumla (VAD/PTT + botão Vol+/Vol-, VU Meter, volume mestre, audio ducking, frame size Opus, modo economia de dados, sons `.ogg` via `SoundPool`, persistência em `SharedPreferences`).
+- [x] **Bloco C (`v0.12.0`–`v0.12.1`):** Markdown básico, autocomplete `@menções`, embeds e cartões de convite, upload/exclusão de stickers pessoais, upload de avatar, PTT zero-latency.
+- [x] **Bloco D (`v0.13.0`–`v0.13.1`):** Chamada recebida com toque, Picture-in-Picture (PiP), qualidade de Screen Share, Soundboard Manager, chat dentro da call, pinch-to-zoom em imagens, fix de congelamento ao desconectar remotamente.
 
 ---
 
-## Bloco B — Recursos de Áudio & Eficiência estilo Mumble/Mumla (`v0.11.0`)
-- [x] **Modos de Transmissão:** Atividade de Voz (VAD) vs **Push-to-Talk (PTT)** (botão grande na sala de voz + botão físico de Volume+/Volume-)
-- [x] **Medidor de nível de microfone ao vivo (VU Meter)** + **Slider de sensibilidade/threshold VAD** nas Configurações de Áudio
-- [x] **Volume mestre de saída (0–200%)** integrado ao volume individual por pessoa
-- [x] **Atenuação (Audio Ducking):** reduzir volume da sala automaticamente enquanto você fala
-- [x] **Opus avançado estilo Mumble:** tamanho de pacote/frame (`10ms / 20ms / 40ms`), modo economia de dados (4G/5G · 24 kbps) e qualidade de conexão ao vivo
-- [x] **Sons nativos do Backspace** (`mute`, `unmute`, `deafen`, `undeafen`, `user_join`, `user_leave`, `disconnect`, `message`) via `SoundPool` com toggle nas Configurações
-- [x] **Persistência das preferências de áudio/vídeo** em `SharedPreferences` (`AudioPreferencesStorage`)
+## Plano Completo de Paridade Web (`v0.14.0` → `v1.0.0`)
 
----
+### Fase 1 (`v0.14.0`) — Nova Arquitetura de Configurações (Menu Vertical + 10 Sub-telas da Instância) & Correções Críticas
+- [x] Menu vertical agrupado de **Configurações de Usuário** com subtelas dedicadas (Conta completa com banner/cores/alterar senha/excluir conta, Aparência com 5 idiomas e escala, Voz & Vídeo organizado, Privacidade `discoverable`/`showActivity`, Conexões, Notificações, Aplicativo & Atualizações SemVer).
+- [x] Menu e **10 sub-telas da Instância (Admin)**: Geral (3 níveis de descoberta + GIFs + cartão apoio), Registro & Convites (CRUD + resgates), Federação (relay, resets, aprovações, peers), Transmissão (resoluções, FPS, limites de bitrate), Áudio Opus, Soundboard Global, Armazenamento & Limpeza (dry-run + executar), Usuários (filtros, admin, reset senha, excluir), Atualizações do Servidor, Telemetria (opt-in + prévia JSON).
+- [x] Corrigir bug do índice da aba Instância (`selectedTab == 1`), barra compacta global de voz (`GlobalVoiceMiniBar`), scroll + olho de senha em `AuthScreen`, fix de auto-scroll no Chat, fix de subcategorias aninhadas e diálogos de confirmação em ações destrutivas.
 
-## Bloco C — Chat Avançado (Paridade Web) (`v0.12.0`)
-- [x] **Markdown completo** (negrito, itálico, código inline, blocos de código, links clicáveis, spoilers)
-- [x] **Autocomplete de `@menções`** ao digitar `@` (membros, cargos, `@everyone`, `@here`) + destaque visual na mensagem
-- [x] **Renderização de Embeds ricos** (título, descrição, imagem, vídeo/GIF inline) e **Cartões de Convite de Espaço** clicáveis
-- [x] **Upload e gerenciamento de Figurinhas pessoais** (`POST /api/stickers`, excluir)
-- [x] **Upload de Avatar** do próprio usuário nas Configurações de Perfil
+### Fase 2 (`v0.15.0`) — Administração Completa de Espaços, Canais, Categorias & 22 Permissões
+- [ ] Expandir `PermissionBits` para todos os 22 bits oficiais + cálculo efetivo + `held-bits`.
+- [ ] Tela completa de **Configurações do Espaço** (Visão Geral com ícone/banner/transferir posse/excluir, Descoberta + solicitações de entrada, Membros + apelido + cargos, Cargos + matriz 22 bits + reordenação, Áudio Opus, Soundboard do Espaço, Banimentos, Convites diretos por DM).
+- [ ] **Configurações de Canal & Categoria** (tópico, privacidade, Opus, overrides tri-estado por cargo/membro) + reordenação de canais/categorias + fix de subcategorias aninhadas.
 
----
+### Fase 3 (`v0.16.0`) — Pastas de Espaços, Notificações & Explorar Completo
+- [ ] **Pastas de Espaços (`SpaceFolder`)** sincronizadas com o servidor (`space-layout`) + indicadores de não lidas em canais e categorias recolhidas.
+- [ ] **Notificações por Espaço/Canal** (`inherit`/`all`/`mentions`/`nothing`, silenciar temporariamente, suprimir `@everyone`/cargos) + **Notificações Android em background** abrindo a conversa/call diretamente.
+- [ ] **Explorar Completo**: Inner Space (home + federadas), Outer Space (diretório público), prévia de convite e solicitações de entrada.
 
-## Bloco D — Voz, Chamadas & Soundboard Completo (`v0.13.0`)
-- [x] **Tela de Chamada Recebida (Incoming Call)** com toque e botões Atender / Recusar
-- [x] **Picture-in-Picture (PiP)** nativo do Android ao minimizar durante transmissão de tela/vídeo
-- [x] **Qualidade de Screen Share configurável** (720p/1080p, 15/30/60 FPS, bitrate) respeitando limites da instância
-- [x] **Soundboard Manager** (upload de novos clipes, renomear, excluir, organizar pastas)
-- [x] **Chat integrado dentro da Call** (painel sobreposto sem sair da tela de voz)
+### Fase 4 (`v0.17.0`) — Chat Completo, Busca Server-Side, Player de Vídeo/Áudio & Stickers
+- [ ] Paginação em DMs, fix de auto-scroll ao carregar histórico, agrupamento de mensagens (5 min), divisores de data e não lidas (`UnreadDivider`), botão "Ir para o presente", salto clicável (`/messages/around`), marcar como não lida, tópico no cabeçalho, `MANAGE_MESSAGES`, `channel_poke`, mensagens de sistema de DM.
+- [ ] **Busca Server-Side** com filtros (`from:`, `has:`, `before:`, `after:`).
+- [ ] **Markdown completo** (blocos de código multilinha com copiar, citações, listas, títulos, `:shortcode:`, menções de cargo `<@&roleId>`).
+- [ ] **Player inline de Vídeo e Áudio**, salvar mídia, coletar stickers de mensagens, `EmojiPicker` completo + stickers como reação, uploads `tus` resumíveis com progresso e rascunhos.
 
----
+### Fase 5 (`v0.18.0`) — DMs, Grupos de DM, Amigos, Perfis Completos & Chamadas DM
+- [ ] Amigos completo (Online, Todos, Pendentes recebidos/enviados com Cancelar, Adicionar Amigo com busca/descoberta/federado, Atividade).
+- [ ] Grupos de DM completo (criar com nome, expandir DM 1:1, renomear, ícone, adicionar/expulsar membros, transferir posse, sair, fechar DM 1:1, busca e preview).
+- [ ] **Perfis Completos** (3 abas: Sobre, Amigos em Comum, Espaços em Comum) clicável em qualquer tela.
+- [ ] **Chamadas DM completas** (`dm_call_start`/`dm_call_end`, tela de chamada de saída, entrar em chamada de grupo ativa).
 
-## Bloco E — Organização, Notificações & Administração Avançada (`v0.14.0`)
-- [ ] **Pastas de Espaços** (`SpaceFolder`) e reordenação
-- [ ] **Configurações de Notificação por Espaço e por Canal** (Tudo / Apenas Menções / Silenciado)
-- [ ] **Notificações Android em background** para DMs e Menções (com abertura direta na conversa)
-- [ ] **Editor granular de Permissões por Cargo e Overrides por Canal/Categoria**
-- [ ] **Gerenciamento de Membros no Admin** (atribuir/remover cargos, alterar apelido no Espaço, transferir posse)
-- [ ] **Painel Admin da Instância: Usuários, Convites da Instância e Atualizações**
+### Fase 6 (`v0.19.0`) — Voz WebRTC Real, Múltiplos Streams, Chat da Call & Soundboard
+- [ ] **Mensagens / Chat do Canal de Voz** acessível logo abaixo/ao lado do nome do canal (sem precisar entrar na call) + sheet de entrada (`MobileVoiceJoinSheet`) com prévia de participantes e chat.
+- [ ] Telemetria WebRTC real (RTT, jitter, perda de pacotes, ICE, TX/RX, `OpusFmtpParser`), gate VAD real, teste de microfone fora de call, reconfiguração ao vivo, chip `WIRED_HEADSET`.
+- [ ] Múltiplos streams opt-in, volume/ducking por stream, pinch-to-zoom em stream, silenciar soundboard por usuário, parar de assistir câmera remota, moderação completa (toggle mute/deafen + `voice_move`).
+- [ ] Soundboard com pastas recolhíveis, prévia local, mutar rápido e editor de recorte/normalização no upload.
+
+### Fase 7 (`v0.20.0`) — Sincronização WebSocket 100%, Federação Completa & Hub do Projeto
+- [ ] Tratar todos os eventos WebSocket faltantes (DM, grupos, canais, categorias, membros, amigos, embeds, notificações, pastas, voz, federação).
+- [ ] **Conexões Federadas** completas (adicionar, filtros, reconectar, reautenticar, excluir identidade remota, peering).
+- [ ] **Hub do Projeto (`/backspace`)**.
+
+### Fase 8 (`v1.0.0`) — Polimento Final, i18n 100% (5 Idiomas) & Estabilização
+- [ ] 100% das strings em `strings.xml` nos 5 idiomas (`check-i18n.mjs` com `0 findings`).
+- [ ] `ModalBottomSheet` M3 e telas dedicadas substituindo diálogos apertados.
+- [ ] Atualizador in-app com SemVer + testes unitários Kotlin e estabilização final.

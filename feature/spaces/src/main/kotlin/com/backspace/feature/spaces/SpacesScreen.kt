@@ -104,6 +104,7 @@ fun SpacesScreen(
     onOpenTextChannel: (Channel) -> Unit,
     onJoinVoiceChannel: (Space, ChannelCategory?, Channel) -> Unit,
     onOpenActiveVoice: () -> Unit,
+    showVoiceBanner: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val colors = AetherTheme.colors
@@ -120,6 +121,9 @@ fun SpacesScreen(
     var showSpaceAdminDialog by remember { mutableStateOf(false) }
     var showAddOrExploreDialog by remember { mutableStateOf(false) }
     var editingChannel by remember { mutableStateOf<Channel?>(null) }
+    var channelPendingDelete by remember { mutableStateOf<Channel?>(null) }
+    var memberPendingKick by remember { mutableStateOf<MemberWithUser?>(null) }
+    var memberPendingBan by remember { mutableStateOf<MemberWithUser?>(null) }
     val collapsedCategories = remember { mutableStateMapOf<String, Boolean>() }
 
     val selectedSpace = snapshot.spaces.firstOrNull { it.id == selectedSpaceId }
@@ -182,26 +186,88 @@ fun SpacesScreen(
                 }
             },
             onKick = {
-                val sid = selectedSpace?.id ?: return@UserProfileDialog
                 selectedProfileMember = null
-                scope.launch {
-                    runCatching {
-                        restClient.kickMember(instanceUrl, jwtToken, sid, member.userId)
-                        wsClient.refreshSpaceDetail(sid)
-                    }
-                }
+                memberPendingKick = member
             },
             onBan = {
-                val sid = selectedSpace?.id ?: return@UserProfileDialog
                 selectedProfileMember = null
-                scope.launch {
-                    runCatching {
-                        restClient.banMember(instanceUrl, jwtToken, sid, member.userId)
-                        wsClient.refreshSpaceDetail(sid)
-                    }
-                }
+                memberPendingBan = member
             },
             onDismiss = { selectedProfileMember = null },
+        )
+    }
+
+    memberPendingKick?.let { member ->
+        AlertDialog(
+            onDismissRequest = { memberPendingKick = null },
+            containerColor = colors.bgChannel,
+            title = { Text("Expulsar membro?", color = colors.textPrimary) },
+            text = {
+                Text(
+                    text = "Tem certeza que deseja expulsar ${member.label} deste Espaço?",
+                    color = colors.textSecondary,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val sid = selectedSpace?.id
+                        memberPendingKick = null
+                        if (sid != null) {
+                            scope.launch {
+                                runCatching {
+                                    restClient.kickMember(instanceUrl, jwtToken, sid, member.userId)
+                                    wsClient.refreshSpaceDetail(sid)
+                                }
+                            }
+                        }
+                    },
+                ) {
+                    Text("Expulsar", color = colors.accentAmber)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { memberPendingKick = null }) {
+                    Text(cancelLabel, color = colors.textSecondary)
+                }
+            },
+        )
+    }
+
+    memberPendingBan?.let { member ->
+        AlertDialog(
+            onDismissRequest = { memberPendingBan = null },
+            containerColor = colors.bgChannel,
+            title = { Text("Banir membro?", color = colors.textPrimary) },
+            text = {
+                Text(
+                    text = "Tem certeza que deseja banir ${member.label} deste Espaço? O usuário não poderá entrar novamente até ser desbanido.",
+                    color = colors.textSecondary,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val sid = selectedSpace?.id
+                        memberPendingBan = null
+                        if (sid != null) {
+                            scope.launch {
+                                runCatching {
+                                    restClient.banMember(instanceUrl, jwtToken, sid, member.userId)
+                                    wsClient.refreshSpaceDetail(sid)
+                                }
+                            }
+                        }
+                    },
+                ) {
+                    Text("Banir", color = colors.accentPeach)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { memberPendingBan = null }) {
+                    Text(cancelLabel, color = colors.textSecondary)
+                }
+            },
         )
     }
 
@@ -222,14 +288,8 @@ fun SpacesScreen(
                     )
                     OutlinedButton(
                         onClick = {
-                            val sid = selectedSpace?.id ?: return@OutlinedButton
                             editingChannel = null
-                            scope.launch {
-                                runCatching {
-                                    restClient.deleteChannel(instanceUrl, jwtToken, ch.id)
-                                    wsClient.refreshSpaceDetail(sid)
-                                }
-                            }
+                            channelPendingDelete = ch
                         },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
@@ -257,6 +317,43 @@ fun SpacesScreen(
             },
             dismissButton = {
                 TextButton(onClick = { editingChannel = null }) {
+                    Text(cancelLabel, color = colors.textSecondary)
+                }
+            },
+        )
+    }
+
+    channelPendingDelete?.let { ch ->
+        AlertDialog(
+            onDismissRequest = { channelPendingDelete = null },
+            containerColor = colors.bgChannel,
+            title = { Text("Apagar canal?", color = colors.textPrimary) },
+            text = {
+                Text(
+                    text = "Tem certeza que deseja apagar o canal \"${ch.name}\"? Esta ação não pode ser desfeita.",
+                    color = colors.textSecondary,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val sid = selectedSpace?.id
+                        channelPendingDelete = null
+                        if (sid != null) {
+                            scope.launch {
+                                runCatching {
+                                    restClient.deleteChannel(instanceUrl, jwtToken, ch.id)
+                                    wsClient.refreshSpaceDetail(sid)
+                                }
+                            }
+                        }
+                    },
+                ) {
+                    Text("Apagar", color = colors.accentPeach)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { channelPendingDelete = null }) {
                     Text(cancelLabel, color = colors.textSecondary)
                 }
             },
@@ -371,7 +468,7 @@ fun SpacesScreen(
 
         Spacer(Modifier.height(10.dp))
 
-        if (voiceState.status == VoiceConnectionStatus.CONNECTED || voiceState.status == VoiceConnectionStatus.CONNECTING) {
+        if (showVoiceBanner && (voiceState.status == VoiceConnectionStatus.CONNECTED || voiceState.status == VoiceConnectionStatus.CONNECTING)) {
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -446,10 +543,28 @@ fun SpacesScreen(
         if (selectedSpace != null) {
             val canConnect = PermissionBits.hasPermission(selectedSpace.myPermissions, PermissionBits.CONNECT)
             val treeItems = remember(selectedSpace) { ChannelTreeBuilder.build(selectedSpace) }
+            val categoryById = remember(selectedSpace.categories) { selectedSpace.categories.associateBy { it.id } }
             val memberById = remember(selectedSpace.members) { selectedSpace.members.associateBy { it.userId } }
 
+            fun isAnyAncestorCollapsed(startCategoryId: String?): Boolean {
+                var currentId = startCategoryId
+                val visited = mutableSetOf<String>()
+                while (currentId != null && visited.add(currentId)) {
+                    if (collapsedCategories[currentId] == true) return true
+                    currentId = categoryById[currentId]?.parentId
+                }
+                return false
+            }
+
+            val visibleTreeItems = treeItems.filter { item ->
+                when (item) {
+                    is SpaceTreeItem.CategoryHeader -> !isAnyAncestorCollapsed(item.category.parentId)
+                    is SpaceTreeItem.ChannelRow -> !isAnyAncestorCollapsed(item.category?.id)
+                }
+            }
+
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(treeItems, key = { it.stableKey }) { item ->
+                items(visibleTreeItems, key = { it.stableKey }) { item ->
                     when (item) {
                         is SpaceTreeItem.CategoryHeader -> {
                             val collapsed = collapsedCategories[item.category.id] == true
@@ -476,90 +591,87 @@ fun SpacesScreen(
                         }
 
                         is SpaceTreeItem.ChannelRow -> {
-                            val isHidden = item.category?.let { collapsedCategories[it.id] == true } == true
-                            if (!isHidden) {
-                                val indent = (item.depth * 10).dp
-                                val ch = item.channel
-                                if (ch.isVoice) {
-                                    val userIds = snapshot.voiceStates[ch.id].orEmpty()
-                                    val isCurrent = voiceState.channelId == ch.id
-                                    AetherSurfaceCard(
-                                        modifier = Modifier
-                                            .padding(start = indent)
-                                            .combinedClickable(
-                                                enabled = canConnect,
-                                                onClick = { onJoinVoiceChannel(selectedSpace, item.category, ch) },
-                                                onLongClick = { if (isSpaceAdmin) editingChannel = ch },
-                                            ),
+                            val indent = (item.depth * 10).dp
+                            val ch = item.channel
+                            if (ch.isVoice) {
+                                val userIds = snapshot.voiceStates[ch.id].orEmpty()
+                                val isCurrent = voiceState.channelId == ch.id
+                                AetherSurfaceCard(
+                                    modifier = Modifier
+                                        .padding(start = indent)
+                                        .combinedClickable(
+                                            enabled = canConnect,
+                                            onClick = { onJoinVoiceChannel(selectedSpace, item.category, ch) },
+                                            onLongClick = { if (isSpaceAdmin) editingChannel = ch },
+                                        ),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
                                     ) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                        ) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Icon(
-                                                    imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                                                    contentDescription = null,
-                                                    tint = if (isCurrent) colors.accentMint else colors.accentPrimary,
-                                                )
-                                                Spacer(Modifier.width(10.dp))
-                                                Text(
-                                                    text = ch.name,
-                                                    style = MaterialTheme.typography.titleMedium,
-                                                    color = colors.textPrimary,
-                                                )
-                                            }
-                                            if (userIds.isNotEmpty()) {
-                                                Text(
-                                                    text = "${userIds.size}",
-                                                    style = MaterialTheme.typography.labelLarge,
-                                                    color = colors.accentMint,
-                                                )
-                                            }
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                                                contentDescription = null,
+                                                tint = if (isCurrent) colors.accentMint else colors.accentPrimary,
+                                            )
+                                            Spacer(Modifier.width(10.dp))
+                                            Text(
+                                                text = ch.name,
+                                                style = MaterialTheme.typography.titleMedium,
+                                                color = colors.textPrimary,
+                                            )
                                         }
                                         if (userIds.isNotEmpty()) {
-                                            Spacer(Modifier.height(6.dp))
-                                            val names = userIds.map { uid -> memberById[uid]?.label ?: uid }
                                             Text(
-                                                text = names.joinToString(", "),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = colors.textSecondary,
+                                                text = "${userIds.size}",
+                                                style = MaterialTheme.typography.labelLarge,
+                                                color = colors.accentMint,
                                             )
                                         }
                                     }
-                                } else {
-                                    val channelMentions = snapshot.channelMentionCounts[ch.id] ?: 0
-                                    AetherSurfaceCard(
-                                        modifier = Modifier
-                                            .padding(start = indent)
-                                            .combinedClickable(
-                                                onClick = { onOpenTextChannel(ch) },
-                                                onLongClick = { if (isSpaceAdmin) editingChannel = ch },
-                                            ),
+                                    if (userIds.isNotEmpty()) {
+                                        Spacer(Modifier.height(6.dp))
+                                        val names = userIds.map { uid -> memberById[uid]?.label ?: uid }
+                                        Text(
+                                            text = names.joinToString(", "),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = colors.textSecondary,
+                                        )
+                                    }
+                                }
+                            } else {
+                                val channelMentions = snapshot.channelMentionCounts[ch.id] ?: 0
+                                AetherSurfaceCard(
+                                    modifier = Modifier
+                                        .padding(start = indent)
+                                        .combinedClickable(
+                                            onClick = { onOpenTextChannel(ch) },
+                                            onLongClick = { if (isSpaceAdmin) editingChannel = ch },
+                                        ),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
                                     ) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                        ) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Tag,
-                                                    contentDescription = null,
-                                                    tint = colors.textSecondary,
-                                                )
-                                                Spacer(Modifier.width(10.dp))
-                                                Text(
-                                                    text = ch.name,
-                                                    style = MaterialTheme.typography.titleMedium,
-                                                    color = colors.textPrimary,
-                                                )
-                                            }
-                                            if (channelMentions > 0) {
-                                                Badge(containerColor = colors.accentPeach) {
-                                                    Text("$channelMentions")
-                                                }
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Default.Tag,
+                                                contentDescription = null,
+                                                tint = colors.textSecondary,
+                                            )
+                                            Spacer(Modifier.width(10.dp))
+                                            Text(
+                                                text = ch.name,
+                                                style = MaterialTheme.typography.titleMedium,
+                                                color = colors.textPrimary,
+                                            )
+                                        }
+                                        if (channelMentions > 0) {
+                                            Badge(containerColor = colors.accentPeach) {
+                                                Text("$channelMentions")
                                             }
                                         }
                                     }

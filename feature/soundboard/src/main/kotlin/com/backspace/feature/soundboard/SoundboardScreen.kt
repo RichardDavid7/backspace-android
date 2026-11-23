@@ -78,6 +78,7 @@ fun SoundboardScreen(
     var errorText by remember { mutableStateOf<String?>(null) }
     var query by remember { mutableStateOf("") }
     var editingSound by remember { mutableStateOf<SoundboardSound?>(null) }
+    var soundPendingDelete by remember { mutableStateOf<SoundboardSound?>(null) }
     var pendingUploadUri by remember { mutableStateOf<Uri?>(null) }
     var uploadName by remember { mutableStateOf("") }
     var uploadEmoji by remember { mutableStateOf("🔊") }
@@ -239,14 +240,8 @@ fun SoundboardScreen(
                     )
                     TextButton(
                         onClick = {
-                            val id = target.id
                             editingSound = null
-                            scope.launch {
-                                runCatching {
-                                    restClient.deleteSoundboardSound(instanceUrl, jwtToken, id)
-                                }.onSuccess { reload() }
-                                    .onFailure { errorText = it.message }
-                            }
+                            soundPendingDelete = target
                         },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
@@ -275,6 +270,41 @@ fun SoundboardScreen(
             },
             dismissButton = {
                 TextButton(onClick = { editingSound = null }) {
+                    Text("Cancelar", color = colors.textSecondary)
+                }
+            },
+        )
+    }
+
+    soundPendingDelete?.let { targetSound ->
+        AlertDialog(
+            onDismissRequest = { soundPendingDelete = null },
+            containerColor = colors.bgChannel,
+            title = { Text("Excluir som?", color = colors.textPrimary) },
+            text = {
+                Text(
+                    text = "Tem certeza que deseja excluir \"${targetSound.name}\" do Soundboard? Esta ação não pode ser desfeita.",
+                    color = colors.textSecondary,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val id = targetSound.id
+                        soundPendingDelete = null
+                        scope.launch {
+                            runCatching {
+                                restClient.deleteSoundboardSound(instanceUrl, jwtToken, id)
+                            }.onSuccess { reload() }
+                                .onFailure { errorText = it.message }
+                        }
+                    },
+                ) {
+                    Text("Excluir", color = colors.accentPeach)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { soundPendingDelete = null }) {
                     Text("Cancelar", color = colors.textSecondary)
                 }
             },

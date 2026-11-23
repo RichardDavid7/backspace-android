@@ -1,11 +1,10 @@
 package com.backspace.feature.settings
 
-import android.net.Uri
-import android.provider.OpenableColumns
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,660 +12,425 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.HeadsetMic
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.backspace.core.designsystem.AetherAvatar
-import com.backspace.core.designsystem.AetherPrimaryButton
-import com.backspace.core.designsystem.AetherPurpleSlider
 import com.backspace.core.designsystem.AetherSurfaceCard
 import com.backspace.core.designsystem.AetherTheme
-import com.backspace.core.model.AudioMode
-import com.backspace.core.model.InstanceAdminSettings
-import com.backspace.core.model.PttHardwareKey
-import com.backspace.core.model.TransmissionMode
+import com.backspace.core.model.InstanceStreamingLimits
 import com.backspace.core.network.BackspaceRestClient
 import com.backspace.core.network.BackspaceWebSocketClient
+import com.backspace.core.updater.GitHubReleaseUpdater
 import com.backspace.core.voice.BackspaceVoiceEngine
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
+private enum class SettingsCategory(
+    val title: String,
+    val subtitle: String,
+    val icon: ImageVector,
+) {
+    ACCOUNT("Conta", "Perfil, avatar, banner, bio, senha e exclusão", Icons.Default.Person),
+    APPEARANCE("Aparência", "Idioma e escala da interface", Icons.Default.Palette),
+    VOICE_VIDEO("Voz e Vídeo", "Microfone, PTT, áudio Opus e transmissão", Icons.Default.HeadsetMic),
+    PRIVACY("Privacidade", "Descoberta de perfil e status de atividade", Icons.Default.Shield),
+    CONNECTIONS("Conexões", "Instância atual e conexões federadas", Icons.Default.Link),
+    NOTIFICATIONS("Notificações", "Alertas de DMs, menções e chamadas", Icons.Default.Notifications),
+    APP_ABOUT("Aplicativo e Atualizações", "Versão, atualizações e código-fonte", Icons.Default.Info),
+    INSTANCE("Instância", "Administração completa da instância (10 painéis)", Icons.Default.AdminPanelSettings),
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     instanceUrl: String,
     jwtToken: String,
-    username: String,
     appVersion: String,
+    repoSlug: String,
     restClient: BackspaceRestClient,
     wsClient: BackspaceWebSocketClient,
     voiceEngine: BackspaceVoiceEngine,
+    updater: GitHubReleaseUpdater,
     title: String,
-    userTabLabel: String,
-    instanceTabLabel: String,
-    accountHeader: String,
-    audioHeader: String,
-    videoHeader: String,
-    instanceGeneralHeader: String,
-    instanceFederationHeader: String,
-    instanceStreamingHeader: String,
-    voiceModeLabel: String,
-    musicModeLabel: String,
-    stereoLabel: String,
-    autoBitrateLabel: String,
-    idleSuspendLabel: String,
-    soundboardVolumeLabel: String,
-    hideNonVideoLabel: String,
-    checkUpdatesLabel: String,
-    saveLabel: String,
     logoutLabel: String,
-    onCheckUpdates: () -> Unit,
+    onTokenUpdated: (String) -> Unit,
     onLogout: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = AetherTheme.colors
-    val scope = rememberCoroutineScope()
-    val voiceState by voiceEngine.state.collectAsStateWithLifecycle()
     val snapshot by wsClient.snapshot.collectAsStateWithLifecycle()
-    val prefs = voiceState.userPrefs
-    val isInstanceAdmin = snapshot.currentUser?.isAdmin == true
-    val limits = snapshot.streamingLimits
+    val currentUser = snapshot.currentUser
+    val isInstanceAdmin = currentUser?.isAdmin == true
 
-    var selectedTab by remember { mutableIntStateOf(0) } // 0 = Usuário, 1 = Instância
-    var adminSettings by remember { mutableStateOf<InstanceAdminSettings?>(null) }
-    var adminStatusMsg by remember { mutableStateOf<String?>(null) }
+    var selectedCategory by remember { mutableStateOf<SettingsCategory?>(null) }
+    var instanceLimits by remember { mutableStateOf(InstanceStreamingLimits()) }
+    var showLogoutConfirm by remember { mutableStateOf(false) }
 
-    LaunchedEffect(isInstanceAdmin, selectedTab) {
-        if (isInstanceAdmin && selectedTab == 1 && adminSettings == null) {
-            runCatching { restClient.getInstanceAdminSettings(instanceUrl, jwtToken) }
-                .onSuccess { adminSettings = it }
-                .onFailure { adminStatusMsg = it.message }
-        }
+    LaunchedEffect(instanceUrl, jwtToken) {
+        runCatching { restClient.getStreamingLimits(instanceUrl, jwtToken) }
+            .onSuccess { instanceLimits = it }
     }
 
+    // Se abrir o menu de Instância, ele gerencia seu próprio TopAppBar e BackHandler
+    if (selectedCategory == SettingsCategory.INSTANCE && isInstanceAdmin) {
+        Box(modifier = modifier.fillMaxSize()) {
+            InstanceAdminHostScreen(
+                instanceUrl = instanceUrl,
+                token = jwtToken,
+                restClient = restClient,
+                onBack = { selectedCategory = null },
+            )
+        }
+        return
+    }
+
+    BackHandler(enabled = selectedCategory != null) {
+        selectedCategory = null
+    }
+
+    if (selectedCategory != null) {
+        val activeCategory = selectedCategory!!
+        Column(
+            modifier = modifier
+                .fillMaxSize()
+                .background(colors.bgBase),
+        ) {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = activeCategory.title,
+                        color = colors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = { selectedCategory = null }) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Voltar",
+                            tint = colors.textPrimary,
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = colors.bgChannel,
+                ),
+            )
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+            ) {
+                when (activeCategory) {
+                    SettingsCategory.ACCOUNT -> AccountSettingsSubScreen(
+                        instanceUrl = instanceUrl,
+                        token = jwtToken,
+                        currentUser = currentUser,
+                        restClient = restClient,
+                        onTokenUpdated = onTokenUpdated,
+                        onProfileSaved = { updated -> wsClient.updateCurrentUserLocal(updated) },
+                        onLogout = onLogout,
+                    )
+
+                    SettingsCategory.APPEARANCE -> AppearanceSettingsSubScreen()
+
+                    SettingsCategory.VOICE_VIDEO -> VoiceVideoSettingsSubScreen(
+                        voiceEngine = voiceEngine,
+                        instanceLimits = instanceLimits,
+                    )
+
+                    SettingsCategory.PRIVACY -> PrivacySettingsSubScreen(
+                        instanceUrl = instanceUrl,
+                        token = jwtToken,
+                        currentUser = currentUser,
+                        restClient = restClient,
+                        onProfileSaved = { updated -> wsClient.updateCurrentUserLocal(updated) },
+                    )
+
+                    SettingsCategory.CONNECTIONS -> ConnectionsSettingsSubScreen(
+                        instanceUrl = instanceUrl,
+                        currentUser = currentUser,
+                    )
+
+                    SettingsCategory.NOTIFICATIONS -> NotificationsSettingsSubScreen()
+
+                    SettingsCategory.APP_ABOUT -> AppAboutSettingsSubScreen(
+                        instanceUrl = instanceUrl,
+                        appVersion = appVersion,
+                        updater = updater,
+                        onLogout = onLogout,
+                        repoSlug = repoSlug,
+                    )
+
+                    SettingsCategory.INSTANCE -> Unit
+                }
+            }
+        }
+        return
+    }
+
+    // Menu principal vertical agrupado (paridade com a estrutura da versão web)
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(colors.bgBase)
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text(
             text = title,
-            style = MaterialTheme.typography.titleLarge,
+            style = MaterialTheme.typography.headlineSmall,
             color = colors.textPrimary,
+            fontWeight = FontWeight.SemiBold,
         )
 
-        // Abas por categoria: 0=Conta, 1=Microfone, 2=Áudio, 3=Vídeo, 4=Instância (admin)
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            item {
-                FilterChip(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    label = { Text("Conta") },
+        // Cartão resumo do usuário (atalho direto para Conta)
+        AetherSurfaceCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { selectedCategory = SettingsCategory.ACCOUNT },
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AetherAvatar(
+                    label = currentUser?.label ?: "?",
+                    avatarUrl = currentUser?.avatarUrl(instanceUrl),
+                    status = currentUser?.status,
+                    size = 48.dp,
                 )
-            }
-            item {
-                FilterChip(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    label = { Text("Microfone") },
-                )
-            }
-            item {
-                FilterChip(
-                    selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
-                    label = { Text("Áudio") },
-                )
-            }
-            item {
-                FilterChip(
-                    selected = selectedTab == 3,
-                    onClick = { selectedTab = 3 },
-                    label = { Text("Vídeo") },
-                )
-            }
-            if (isInstanceAdmin) {
-                item {
-                    FilterChip(
-                        selected = selectedTab == 4,
-                        onClick = { selectedTab = 4 },
-                        label = { Text(instanceTabLabel) },
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = currentUser?.label ?: "-",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = colors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = buildString {
+                            if (currentUser != null) append("@${currentUser.username}")
+                            if (!currentUser?.customStatus.isNullOrBlank()) {
+                                if (isNotEmpty()) append(" · ")
+                                append(currentUser?.customStatus)
+                            }
+                        }.ifBlank { instanceUrl },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = colors.textTertiary,
+                )
             }
         }
 
-        if (selectedTab == 0) {
-            // ── ABA 0: CONTA & PERFIL ──
-            val context = LocalContext.current
-            val me = snapshot.currentUser
-            var displayName by remember(me?.displayName) { mutableStateOf(me?.displayName.orEmpty()) }
-            var bio by remember(me?.bio) { mutableStateOf(me?.bio.orEmpty()) }
-            var customStatus by remember(me?.customStatus) { mutableStateOf(me?.customStatus.orEmpty()) }
-            var profileMsg by remember { mutableStateOf<String?>(null) }
+        // Grupo 1 — Configurações de Usuário
+        SettingsMenuGroup(
+            header = "CONFIGURAÇÕES DE USUÁRIO",
+            items = listOf(
+                SettingsCategory.ACCOUNT,
+                SettingsCategory.APPEARANCE,
+                SettingsCategory.VOICE_VIDEO,
+                SettingsCategory.PRIVACY,
+            ),
+            onSelect = { selectedCategory = it },
+        )
 
-            val avatarPicker = rememberLauncherForActivityResult(
-                contract = ActivityResultContracts.GetContent(),
-            ) { uri: Uri? ->
-                if (uri == null) return@rememberLauncherForActivityResult
-                scope.launch {
-                    profileMsg = null
-                    runCatching {
-                        val (fileName, mimeType, bytes) = withContext(Dispatchers.IO) {
-                            val resolver = context.contentResolver
-                            var name = "avatar.png"
-                            resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
-                                if (c.moveToFirst()) {
-                                    val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                                    if (idx >= 0) name = c.getString(idx) ?: name
-                                }
-                            }
-                            val type = resolver.getType(uri) ?: "image/png"
-                            val data = resolver.openInputStream(uri)?.use { it.readBytes() }
-                                ?: throw IllegalStateException("Cannot read image")
-                            Triple(name, type, data)
-                        }
-                        val uploaded = restClient.uploadFileTus(instanceUrl, jwtToken, fileName, mimeType, bytes)
-                        val updated = restClient.updateMyStatus(
-                            instanceUrl = instanceUrl,
-                            token = jwtToken,
-                            avatar = uploaded.filename,
-                        )
-                        wsClient.updateCurrentUserLocal(updated)
-                    }.onSuccess { profileMsg = "Foto atualizada!" }
-                        .onFailure { profileMsg = it.message }
-                }
-            }
+        // Grupo 2 — Aplicativo
+        SettingsMenuGroup(
+            header = "APLICATIVO",
+            items = listOf(
+                SettingsCategory.CONNECTIONS,
+                SettingsCategory.NOTIFICATIONS,
+                SettingsCategory.APP_ABOUT,
+            ),
+            onSelect = { selectedCategory = it },
+        )
 
-            AetherSurfaceCard {
-                Text(text = accountHeader, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
-                Spacer(Modifier.height(10.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    AetherAvatar(
-                        imageUrl = me?.avatarUrl(instanceUrl),
-                        fallbackLabel = username,
-                        size = 52.dp,
-                        status = me?.status ?: "online",
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(text = username, color = colors.textPrimary, style = MaterialTheme.typography.titleSmall)
-                        Text(text = "$instanceUrl · v$appVersion", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                OutlinedButton(
-                    onClick = { avatarPicker.launch("image/*") },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Alterar foto de perfil", color = colors.accentSky)
-                }
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = displayName,
-                    onValueChange = { displayName = it },
-                    label = { Text("Nome de exibição") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(6.dp))
-                OutlinedTextField(
-                    value = customStatus,
-                    onValueChange = { customStatus = it },
-                    label = { Text("Status personalizado") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(6.dp))
-                OutlinedTextField(
-                    value = bio,
-                    onValueChange = { bio = it },
-                    label = { Text("Biografia") },
-                    modifier = Modifier.fillMaxWidth(),
-                    maxLines = 3,
-                )
-                if (!profileMsg.isNullOrBlank()) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(profileMsg!!, color = colors.accentMint, style = MaterialTheme.typography.bodySmall)
-                }
-                Spacer(Modifier.height(8.dp))
-                AetherPrimaryButton(
-                    text = saveLabel,
-                    onClick = {
-                        scope.launch {
-                            profileMsg = null
-                            runCatching {
-                                restClient.updateMyStatus(
-                                    instanceUrl = instanceUrl,
-                                    token = jwtToken,
-                                    displayName = displayName.trim().ifBlank { null },
-                                    bio = bio.trim().ifBlank { null },
-                                    customStatus = customStatus.trim().ifBlank { null },
-                                )
-                            }.onSuccess { updated ->
-                                wsClient.updateCurrentUserLocal(updated)
-                                profileMsg = "Perfil salvo!"
-                            }.onFailure { err ->
-                                profileMsg = err.message
-                            }
-                        }
-                    },
-                )
-            }
-
-            AetherPrimaryButton(text = checkUpdatesLabel, onClick = onCheckUpdates)
-
-            OutlinedButton(
-                onClick = onLogout,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(text = logoutLabel, color = colors.accentPeach)
-            }
-        } else if (selectedTab == 1) {
-            // ── ABA 1: MICROFONE E TRANSMISSÃO ──
-            AetherSurfaceCard {
-                Text(text = "Microfone e Transmissão", style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = "Escolha como sua voz é enviada nas chamadas.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textSecondary,
-                )
-                Spacer(Modifier.height(10.dp))
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = prefs.transmissionMode == TransmissionMode.VOICE_ACTIVITY,
-                        onClick = { voiceEngine.updateUserAudioPreferences { it.copy(transmissionMode = TransmissionMode.VOICE_ACTIVITY) } },
-                        label = { Text("Automático (Voz)") },
-                    )
-                    FilterChip(
-                        selected = prefs.transmissionMode == TransmissionMode.PUSH_TO_TALK,
-                        onClick = { voiceEngine.updateUserAudioPreferences { it.copy(transmissionMode = TransmissionMode.PUSH_TO_TALK) } },
-                        label = { Text("Apertar p/ Falar (PTT)") },
-                    )
-                }
-
-                if (prefs.transmissionMode == TransmissionMode.PUSH_TO_TALK) {
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = "Segure o botão na chamada ou a tecla física escolhida abaixo para falar (sem cortar início nem fim).",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.textSecondary,
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(
-                            PttHardwareKey.NONE to "Só na tela",
-                            PttHardwareKey.VOLUME_UP to "Botão Vol +",
-                            PttHardwareKey.VOLUME_DOWN to "Botão Vol -",
-                        ).forEach { (key, label) ->
-                            FilterChip(
-                                selected = prefs.pttHardwareKey == key,
-                                onClick = { voiceEngine.updateUserAudioPreferences { it.copy(pttHardwareKey = key) } },
-                                label = { Text(label) },
-                            )
-                        }
-                    }
-                } else {
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = "Sensibilidade do microfone (${(prefs.vadThreshold * 100).toInt()}%) — abaixe se sua voz estiver cortando; aumente se estiver pegando ruído de fundo.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.textSecondary,
-                    )
-                    AetherPurpleSlider(
-                        value = prefs.vadThreshold,
-                        onValueChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(vadThreshold = v) } },
-                        valueRange = 0.02f..0.8f,
-                    )
-                    LinearProgressIndicator(
-                        progress = { voiceState.micInputLevel.coerceIn(0f, 1f) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(6.dp)
-                            .clip(RoundedCornerShape(4.dp)),
-                        color = colors.accentMint,
-                        trackColor = colors.bgBase,
-                    )
-                }
-            }
-        } else if (selectedTab == 2) {
-            // ── ABA 2: ÁUDIO & OPUS ──
-            AetherSurfaceCard {
-                Text(text = audioHeader, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
-                Spacer(Modifier.height(8.dp))
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = prefs.mode == AudioMode.VOICE,
-                        onClick = { voiceEngine.updateUserAudioPreferences { it.copy(mode = AudioMode.VOICE) } },
-                        label = { Text(voiceModeLabel) },
-                    )
-                    FilterChip(
-                        selected = prefs.mode == AudioMode.MUSIC,
-                        onClick = { voiceEngine.updateUserAudioPreferences { it.copy(mode = AudioMode.MUSIC) } },
-                        label = { Text(musicModeLabel) },
-                    )
-                }
-
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = "Volume geral da chamada: ${(prefs.masterOutputVolume * 100).toInt()}%",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textSecondary,
-                )
-                AetherPurpleSlider(
-                    value = prefs.masterOutputVolume,
-                    onValueChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(masterOutputVolume = v) } },
-                    valueRange = 0f..2f,
-                )
-
-                Text("Tamanho do pacote Opus (menor = menos atraso):", style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(10, 20, 40).forEach { ms ->
-                        FilterChip(
-                            selected = prefs.opusFrameSizeMs == ms,
-                            onClick = { voiceEngine.updateUserAudioPreferences { it.copy(opusFrameSizeMs = ms) } },
-                            label = { Text("${ms}ms") },
-                        )
-                    }
-                }
-
-                SettingsToggleRow(
-                    label = "Economia de dados móveis (24 kbps)",
-                    checked = prefs.dataSaverMode,
-                    onCheckedChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(dataSaverMode = v) } },
-                )
-                SettingsToggleRow(
-                    label = "Abaixar volume da sala quando eu falar",
-                    checked = prefs.audioDuckingEnabled,
-                    onCheckedChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(audioDuckingEnabled = v) } },
-                )
-                SettingsToggleRow(
-                    label = "Sons do app (mutar / entrar / sair)",
-                    checked = prefs.uiSoundsEnabled,
-                    onCheckedChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(uiSoundsEnabled = v) } },
-                )
-                SettingsToggleRow(
-                    label = "Cancelamento de Eco (AEC)",
-                    checked = prefs.echoCancellation,
-                    onCheckedChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(echoCancellation = v) } },
-                )
-                SettingsToggleRow(
-                    label = "Supressão de Ruído (NS)",
-                    checked = prefs.noiseSuppression,
-                    onCheckedChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(noiseSuppression = v) } },
-                )
-                SettingsToggleRow(
-                    label = "Ganho Automático (AGC)",
-                    checked = prefs.autoGainControl,
-                    onCheckedChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(autoGainControl = v) } },
-                )
-                SettingsToggleRow(
-                    label = stereoLabel,
-                    checked = prefs.stereo,
-                    onCheckedChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(stereo = v) } },
-                )
-                SettingsToggleRow(
-                    label = autoBitrateLabel,
-                    checked = prefs.bitrateAuto,
-                    onCheckedChange = { v -> voiceEngine.updateUserAudioPreferences { it.copy(bitrateAuto = v) } },
-                )
-
-                if (!prefs.bitrateAuto) {
-                    Text(
-                        text = "${prefs.manualBitrateKbps} kbps",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.textSecondary,
-                    )
-                    AetherPurpleSlider(
-                        value = prefs.manualBitrateKbps.toFloat().coerceIn(8f, 512f),
-                        onValueChange = { v ->
-                            voiceEngine.updateUserAudioPreferences { it.copy(manualBitrateKbps = v.toInt()) }
-                        },
-                        valueRange = 8f..512f,
-                    )
-                }
-
-                SettingsToggleRow(
-                    label = idleSuspendLabel,
-                    checked = prefs.idleSuspendEnabled,
-                    onCheckedChange = { v ->
-                        voiceEngine.updateUserAudioPreferences { it.copy(idleSuspendEnabled = v) }
-                    },
-                )
-
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = "$soundboardVolumeLabel: ${(voiceState.soundboardVolume * 100).toInt()}%",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textSecondary,
-                )
-                AetherPurpleSlider(
-                    value = voiceState.soundboardVolume,
-                    onValueChange = { voiceEngine.setSoundboardVolume(it) },
-                    valueRange = 0f..1f,
-                )
-
-                Spacer(Modifier.height(6.dp))
-                OutlinedButton(
-                    onClick = { voiceEngine.resetAudioPreferencesToDefault() },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Restaurar padrões de áudio", color = colors.accentAmber)
-                }
-            }
-        } else if (selectedTab == 3) {
-            // ── ABA 3: VÍDEO & TRANSMISSÃO DE TELA ──
-            val maxRes = snapshot.streamingLimits.maxResolution
-            val maxFps = snapshot.streamingLimits.maxFramerate
-            AetherSurfaceCard {
-                Text(text = videoHeader, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
-                SettingsToggleRow(
-                    label = hideNonVideoLabel,
-                    checked = prefs.hideNonVideoParticipants,
-                    onCheckedChange = { v ->
-                        voiceEngine.updateUserAudioPreferences { it.copy(hideNonVideoParticipants = v) }
-                    },
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = "Qualidade do compartilhamento de tela (limite da instância: ${maxRes}p @ ${maxFps} FPS):",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textSecondary,
-                )
-                Spacer(Modifier.height(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(720, 1080).forEach { res ->
-                        FilterChip(
-                            selected = prefs.screenShareResolution == res,
-                            enabled = res <= maxRes,
-                            onClick = {
-                                voiceEngine.updateUserAudioPreferences { it.copy(screenShareResolution = res) }
-                            },
-                            label = { Text("${res}p") },
-                        )
-                    }
-                }
-                Spacer(Modifier.height(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(15, 30, 60).forEach { fps ->
-                        FilterChip(
-                            selected = prefs.screenShareFps == fps,
-                            enabled = fps <= maxFps,
-                            onClick = {
-                                voiceEngine.updateUserAudioPreferences { it.copy(screenShareFps = fps) }
-                            },
-                            label = { Text("$fps FPS") },
-                        )
-                    }
-                }
-            }
-        } else if (isInstanceAdmin) {
-            // ── ABA ADMINISTRAÇÃO COMPLETA DA INSTÂNCIA ──
-            val currentAdmin = adminSettings ?: InstanceAdminSettings()
-            var instanceName by remember(currentAdmin) { mutableStateOf(currentAdmin.instanceName) }
-            var registrationOpen by remember(currentAdmin) { mutableStateOf(currentAdmin.registrationOpen) }
-            var federatedReg by remember(currentAdmin) { mutableStateOf(currentAdmin.federatedRegistrationOpen) }
-            var discoveryEnabled by remember(currentAdmin) { mutableStateOf(currentAdmin.discoveryEnabled) }
-            var gifEnabled by remember(currentAdmin) { mutableStateOf(currentAdmin.gifEnabled) }
-            var maxUploadMb by remember(currentAdmin) { mutableStateOf(currentAdmin.maxUploadSizeMb.toFloat()) }
-
-            var relayEnabled by remember(currentAdmin) { mutableStateOf(currentAdmin.federationRelayEnabled) }
-            var autoPeering by remember(currentAdmin) { mutableStateOf(currentAdmin.autoAcceptPeering) }
-            var dirEnabled by remember(currentAdmin) { mutableStateOf(currentAdmin.directoryEnabled) }
-            var dirBrowse by remember(currentAdmin) { mutableStateOf(currentAdmin.directoryBrowseEnabled) }
-
-            var videoMaxBitrate by remember(limits) { mutableStateOf(limits.maxBitrateKbps.toFloat()) }
-            var allowCustomVideoBr by remember(limits) { mutableStateOf(limits.allowCustomBitrate) }
-            var instDefaultAudio by remember(limits) { mutableStateOf(limits.defaultAudioBitrateKbps.toFloat()) }
-            var instMaxAudio by remember(limits) { mutableStateOf(limits.maxAudioBitrateKbps.toFloat()) }
-            var instMusic by remember(limits) { mutableStateOf(limits.allowMusicMode) }
-            var instStereo by remember(limits) { mutableStateOf(limits.allowStereoAudio) }
-            var instSoundboard by remember(limits) { mutableStateOf(limits.soundboardEnabled) }
-            var instMaxSbSounds by remember(limits) { mutableStateOf(limits.maxSoundboardSoundsPerScope.toFloat()) }
-            var instMaxSbConc by remember(limits) { mutableStateOf(limits.maxConcurrentSoundboardSounds.toFloat()) }
-
-            AetherSurfaceCard {
-                Text(text = instanceGeneralHeader, style = MaterialTheme.typography.titleMedium, color = colors.accentAmber)
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = instanceName,
-                    onValueChange = { instanceName = it },
-                    label = { Text("Instance name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(6.dp))
-                SettingsToggleRow("Registration open", registrationOpen) { registrationOpen = it }
-                SettingsToggleRow("Federated registration", federatedReg) { federatedReg = it }
-                SettingsToggleRow("Discovery enabled", discoveryEnabled) { discoveryEnabled = it }
-                SettingsToggleRow("GIFs enabled", gifEnabled) { gifEnabled = it }
-                Text("Max upload: ${maxUploadMb.toInt()} MB", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
-                AetherPurpleSlider(value = maxUploadMb.coerceIn(5f, 500f), onValueChange = { maxUploadMb = it }, valueRange = 5f..500f)
-            }
-
-            AetherSurfaceCard {
-                Text(text = instanceFederationHeader, style = MaterialTheme.typography.titleMedium, color = colors.accentSky)
-                SettingsToggleRow("Federation relay", relayEnabled) { relayEnabled = it }
-                SettingsToggleRow("Auto-accept peering", autoPeering) { autoPeering = it }
-                SettingsToggleRow("Directory listing", dirEnabled) { dirEnabled = it }
-                SettingsToggleRow("Browse directory", dirBrowse) { dirBrowse = it }
-            }
-
-            AetherSurfaceCard {
-                Text(text = instanceStreamingHeader, style = MaterialTheme.typography.titleMedium, color = colors.accentPrimary)
-                Spacer(Modifier.height(6.dp))
-                Text("Video max bitrate: ${videoMaxBitrate.toInt()} kbps", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
-                AetherPurpleSlider(value = videoMaxBitrate.coerceIn(500f, 20000f), onValueChange = { videoMaxBitrate = it }, valueRange = 500f..20000f)
-                SettingsToggleRow("Allow custom video bitrate", allowCustomVideoBr) { allowCustomVideoBr = it }
-
-                Spacer(Modifier.height(6.dp))
-                Text("Opus default: ${instDefaultAudio.toInt()} kbps", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
-                AetherPurpleSlider(value = instDefaultAudio.coerceIn(8f, 512f), onValueChange = { instDefaultAudio = it }, valueRange = 8f..512f)
-                Text("Opus max: ${instMaxAudio.toInt()} kbps", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
-                AetherPurpleSlider(value = instMaxAudio.coerceIn(8f, 512f), onValueChange = { instMaxAudio = it }, valueRange = 8f..512f)
-                SettingsToggleRow(musicModeLabel, instMusic) { instMusic = it }
-                SettingsToggleRow(stereoLabel, instStereo) { instStereo = it }
-
-                Spacer(Modifier.height(6.dp))
-                SettingsToggleRow("Soundboard", instSoundboard) { instSoundboard = it }
-                Text("Max sounds / scope: ${instMaxSbSounds.toInt()}", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
-                AetherPurpleSlider(value = instMaxSbSounds.coerceIn(1f, 200f), onValueChange = { instMaxSbSounds = it }, valueRange = 1f..200f)
-                Text("Max concurrent sounds: ${instMaxSbConc.toInt()}", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
-                AetherPurpleSlider(value = instMaxSbConc.coerceIn(1f, 10f), onValueChange = { instMaxSbConc = it }, valueRange = 1f..10f)
-            }
-
-            if (!adminStatusMsg.isNullOrBlank()) {
-                Text(adminStatusMsg!!, color = colors.accentMint, style = MaterialTheme.typography.bodySmall)
-            }
-
-            AetherPrimaryButton(
-                text = saveLabel,
-                onClick = {
-                    scope.launch {
-                        adminStatusMsg = null
-                        val newAdmin = currentAdmin.copy(
-                            instanceName = instanceName.trim().ifBlank { "Backspace" },
-                            registrationOpen = registrationOpen,
-                            federatedRegistrationOpen = federatedReg,
-                            discoveryEnabled = discoveryEnabled,
-                            gifEnabled = gifEnabled,
-                            maxUploadSizeMb = maxUploadMb.toInt(),
-                            federationRelayEnabled = relayEnabled,
-                            autoAcceptPeering = autoPeering,
-                            directoryEnabled = dirEnabled,
-                            directoryBrowseEnabled = dirBrowse,
-                        )
-                        val newLimits = limits.copy(
-                            maxBitrateKbps = videoMaxBitrate.toInt(),
-                            allowCustomBitrate = allowCustomVideoBr,
-                            defaultAudioBitrateKbps = instDefaultAudio.toInt(),
-                            maxAudioBitrateKbps = instMaxAudio.toInt().coerceAtLeast(instDefaultAudio.toInt()),
-                            allowMusicMode = instMusic,
-                            allowStereoAudio = instStereo,
-                            soundboardEnabled = instSoundboard,
-                            maxSoundboardSoundsPerScope = instMaxSbSounds.toInt(),
-                            maxConcurrentSoundboardSounds = instMaxSbConc.toInt(),
-                        )
-                        runCatching {
-                            val savedAdmin = restClient.updateInstanceAdminSettings(instanceUrl, jwtToken, newAdmin)
-                            val savedLimits = restClient.updateStreamingLimits(instanceUrl, jwtToken, newLimits)
-                            savedAdmin to savedLimits
-                        }.onSuccess { (savedAdmin, savedLimits) ->
-                            adminSettings = savedAdmin
-                            wsClient.updateStreamingLimitsLocal(savedLimits)
-                            adminStatusMsg = "OK"
-                        }.onFailure { err ->
-                            adminStatusMsg = err.message
-                        }
-                    }
-                },
+        // Grupo 3 — Administração (apenas admins da instância)
+        if (isInstanceAdmin) {
+            SettingsMenuGroup(
+                header = "ADMINISTRAÇÃO",
+                items = listOf(SettingsCategory.INSTANCE),
+                accentIconTint = colors.accentAmber,
+                onSelect = { selectedCategory = it },
             )
         }
+
+        // Rodapé — Sair da conta + versão
+        Spacer(modifier = Modifier.height(4.dp))
+        OutlinedButton(
+            onClick = { showLogoutConfirm = true },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.Logout,
+                contentDescription = null,
+                tint = colors.accentPeach,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(logoutLabel, color = colors.accentPeach)
+        }
+
+        Text(
+            text = "Backspace Android v$appVersion · $instanceUrl",
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.textTertiary,
+            modifier = Modifier.align(Alignment.CenterHorizontally),
+        )
+    }
+
+    if (showLogoutConfirm) {
+        AlertDialog(
+            onDismissRequest = { showLogoutConfirm = false },
+            containerColor = colors.bgChannel,
+            title = { Text("Sair da conta?", color = colors.textPrimary) },
+            text = {
+                Text(
+                    text = "Você será desconectado desta instância e precisará entrar novamente.",
+                    color = colors.textSecondary,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showLogoutConfirm = false
+                        onLogout()
+                    },
+                ) {
+                    Text(logoutLabel, color = colors.accentPeach)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogoutConfirm = false }) {
+                    Text("Cancelar", color = colors.textSecondary)
+                }
+            },
+        )
     }
 }
 
 @Composable
-private fun SettingsToggleRow(
-    label: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
+private fun SettingsMenuGroup(
+    header: String,
+    items: List<SettingsCategory>,
+    onSelect: (SettingsCategory) -> Unit,
+    accentIconTint: Color? = null,
 ) {
     val colors = AetherTheme.colors
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(text = label, color = colors.textPrimary)
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = header,
+            style = MaterialTheme.typography.labelSmall,
+            color = colors.textTertiary,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
+        AetherSurfaceCard(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                items.forEachIndexed { index, category ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { onSelect(category) }
+                            .padding(vertical = 10.dp, horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background((accentIconTint ?: colors.accentPrimary).copy(alpha = 0.14f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = category.icon,
+                                contentDescription = null,
+                                tint = accentIconTint ?: colors.accentPrimary,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = category.title,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = colors.textPrimary,
+                                fontWeight = FontWeight.Medium,
+                            )
+                            Text(
+                                text = category.subtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.textSecondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = colors.textTertiary,
+                        )
+                    }
+                    if (index < items.lastIndex) {
+                        HorizontalDivider(
+                            color = colors.borderSubtle,
+                            modifier = Modifier.padding(vertical = 2.dp),
+                        )
+                    }
+                }
+            }
+        }
     }
 }

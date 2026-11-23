@@ -1,12 +1,30 @@
 package com.backspace.core.network
 
 import android.util.Base64
+import com.backspace.core.model.AdminInviteItem
+import com.backspace.core.model.AdminInviteRedemption
+import com.backspace.core.model.AdminInviteRedemptionsResponse
+import com.backspace.core.model.AdminInviteWrapperResponse
+import com.backspace.core.model.AdminInvitesListResponse
+import com.backspace.core.model.AdminTelemetryStatus
+import com.backspace.core.model.AdminUserItem
+import com.backspace.core.model.AdminUsersPageResponse
+import com.backspace.core.model.ChangePasswordResponse
 import com.backspace.core.model.Channel
 import com.backspace.core.model.ChannelCategory
 import com.backspace.core.model.DmChannel
 import com.backspace.core.model.DmMessage
 import com.backspace.core.model.ExploreSpaceItem
 import com.backspace.core.model.ExploreSpacesResponse
+import com.backspace.core.model.FederationApprovalActionResponse
+import com.backspace.core.model.FederationApprovalItem
+import com.backspace.core.model.FederationApprovalsResponse
+import com.backspace.core.model.FederationPeerItem
+import com.backspace.core.model.FederationPeerRecheckResponse
+import com.backspace.core.model.FederationPeerRotateResponse
+import com.backspace.core.model.FederationPeersResponse
+import com.backspace.core.model.FederationResetEventItem
+import com.backspace.core.model.FederationResetEventsResponse
 import com.backspace.core.model.FriendItem
 import com.backspace.core.model.FriendRequestItem
 import com.backspace.core.model.GifItem
@@ -14,10 +32,13 @@ import com.backspace.core.model.GifSearchResponse
 import com.backspace.core.model.InstanceAdminSettings
 import com.backspace.core.model.InstanceInfo
 import com.backspace.core.model.InstanceStreamingLimits
+import com.backspace.core.model.InstanceUpdateStatusResponse
 import com.backspace.core.model.InviteCodeExtractor
 import com.backspace.core.model.LiveKitTokenResponse
 import com.backspace.core.model.Message
 import com.backspace.core.model.MessageAttachment
+import com.backspace.core.model.ReattachAccountResponse
+import com.backspace.core.model.ResetPasswordResponse
 import com.backspace.core.model.Role
 import com.backspace.core.model.SoundboardListResponse
 import com.backspace.core.model.SoundboardSound
@@ -25,12 +46,18 @@ import com.backspace.core.model.Space
 import com.backspace.core.model.SpaceBanItem
 import com.backspace.core.model.SpaceInviteResponse
 import com.backspace.core.model.StickerItem
+import com.backspace.core.model.StorageCleanupResult
+import com.backspace.core.model.StorageStatsResponse
 import com.backspace.core.model.User
 import java.net.URLEncoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -318,9 +345,26 @@ class BackspaceRestClient(
         settings: InstanceAdminSettings,
     ): InstanceAdminSettings {
         val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val payload = buildJsonObject {
+            put("instanceName", JsonPrimitive(settings.instanceName))
+            put("registrationOpen", JsonPrimitive(settings.registrationOpen))
+            put("federatedRegistrationOpen", JsonPrimitive(settings.federatedRegistrationOpen))
+            put("discoveryEnabled", JsonPrimitive(settings.discoveryEnabled))
+            put("maxUploadSizeMb", JsonPrimitive(settings.maxUploadSizeMb))
+            put("federationRelayEnabled", JsonPrimitive(settings.federationRelayEnabled))
+            put("federationRelayTtlDays", JsonPrimitive(settings.federationRelayTtlDays))
+            put("defaultAutoRotateIntervalDays", JsonPrimitive(settings.defaultAutoRotateIntervalDays))
+            put("autoAcceptPeering", JsonPrimitive(settings.autoAcceptPeering))
+            put("directoryEnabled", JsonPrimitive(settings.directoryEnabled))
+            put("directoryBrowseEnabled", JsonPrimitive(settings.directoryBrowseEnabled))
+            put("supportCardEnabled", JsonPrimitive(settings.supportCardEnabled))
+            if (settings.gifApiKey != null) {
+                put("gifApiKey", JsonPrimitive(settings.gifApiKey))
+            }
+        }.toString()
         return executePatch(
             url = "$base/api/settings/instance",
-            body = json.encodeToString(InstanceAdminSettings.serializer(), settings),
+            body = payload,
             token = token,
         )
     }
@@ -331,9 +375,43 @@ class BackspaceRestClient(
         limits: InstanceStreamingLimits,
     ): InstanceStreamingLimits {
         val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val payload = buildJsonObject {
+            put("maxBitrateKbps", JsonPrimitive(limits.maxBitrateKbps))
+            put("minBitrateKbps", JsonPrimitive(limits.minBitrateKbps))
+            put("bitrateStepKbps", JsonPrimitive(limits.bitrateStepKbps))
+            put("maxResolution", JsonPrimitive(limits.maxResolution))
+            put("maxFramerate", JsonPrimitive(limits.maxFramerate))
+            put("allowCustomBitrate", JsonPrimitive(limits.allowCustomBitrate))
+            put("soundboardEnabled", JsonPrimitive(limits.soundboardEnabled))
+            put("maxSoundboardSoundsPerScope", JsonPrimitive(limits.maxSoundboardSoundsPerScope))
+            put("maxConcurrentSoundboardSounds", JsonPrimitive(limits.maxConcurrentSoundboardSounds))
+            if (limits.allowedResolutions.isNotEmpty()) {
+                put(
+                    "allowedResolutions",
+                    buildJsonArray {
+                        limits.allowedResolutions.forEach { res ->
+                            val trimmed = res.trim()
+                            if (trimmed.equals("native", ignoreCase = true)) {
+                                add(JsonPrimitive("native"))
+                            } else {
+                                trimmed.toIntOrNull()?.let { add(JsonPrimitive(it)) }
+                            }
+                        }
+                    },
+                )
+            }
+            if (limits.allowedFramerates.isNotEmpty()) {
+                put(
+                    "allowedFramerates",
+                    buildJsonArray {
+                        limits.allowedFramerates.forEach { add(JsonPrimitive(it)) }
+                    },
+                )
+            }
+        }.toString()
         return executePatch(
             url = "$base/api/settings/streaming",
-            body = json.encodeToString(InstanceStreamingLimits.serializer(), limits),
+            body = payload,
             token = token,
         )
     }
@@ -796,6 +874,12 @@ class BackspaceRestClient(
         }
     }
 
+    suspend fun updateInstanceStreamingLimits(
+        instanceUrl: String,
+        token: String,
+        limits: InstanceStreamingLimits,
+    ): InstanceStreamingLimits = updateStreamingLimits(instanceUrl, token, limits)
+
     suspend fun updateMyStatus(
         instanceUrl: String,
         token: String,
@@ -804,22 +888,513 @@ class BackspaceRestClient(
         avatar: String? = null,
         status: String? = null,
         customStatus: String? = null,
+        avatarColor: String? = null,
+        banner: String? = null,
+        accentColor: String? = null,
+        bannerColor: String? = null,
+        discoverable: Boolean? = null,
+        showActivity: Boolean? = null,
     ): User {
         val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val effectiveAccent = accentColor ?: bannerColor
+        val payload = buildJsonObject {
+            if (displayName != null) put("displayName", JsonPrimitive(displayName))
+            if (bio != null) put("bio", JsonPrimitive(bio))
+            if (avatar != null) put("avatar", JsonPrimitive(avatar))
+            if (status != null) put("status", JsonPrimitive(status))
+            if (customStatus != null) put("customStatus", JsonPrimitive(customStatus))
+            if (avatarColor != null) put("avatarColor", JsonPrimitive(avatarColor))
+            if (banner != null) put("banner", JsonPrimitive(banner))
+            if (effectiveAccent != null) put("accentColor", JsonPrimitive(effectiveAccent))
+            if (discoverable != null) put("discoverable", JsonPrimitive(discoverable))
+            if (showActivity != null) put("showActivity", JsonPrimitive(showActivity))
+        }.toString()
         return executePatch(
             url = "$base/api/users/@me",
-            body = json.encodeToString(
-                UpdateMeRequest.serializer(),
-                UpdateMeRequest(
-                    displayName = displayName,
-                    bio = bio,
-                    avatar = avatar,
-                    status = status,
-                    customStatus = customStatus,
-                ),
-            ),
+            body = payload,
             token = token,
         )
+    }
+
+    suspend fun updateProfile(
+        instanceUrl: String,
+        token: String,
+        displayName: String? = null,
+        bio: String? = null,
+        avatar: String? = null,
+        status: String? = null,
+        customStatus: String? = null,
+        avatarColor: String? = null,
+        banner: String? = null,
+        accentColor: String? = null,
+        bannerColor: String? = null,
+        discoverable: Boolean? = null,
+        showActivity: Boolean? = null,
+    ): User = updateMyStatus(
+        instanceUrl = instanceUrl,
+        token = token,
+        displayName = displayName,
+        bio = bio,
+        avatar = avatar,
+        status = status,
+        customStatus = customStatus,
+        avatarColor = avatarColor,
+        banner = banner,
+        accentColor = accentColor,
+        bannerColor = bannerColor,
+        discoverable = discoverable,
+        showActivity = showActivity,
+    )
+
+    // ── Conta (@me) ──
+
+    suspend fun changePassword(
+        instanceUrl: String,
+        token: String,
+        currentPassword: String,
+        newPassword: String,
+    ): ChangePasswordResponse {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val payload = buildJsonObject {
+            put("currentPassword", JsonPrimitive(currentPassword))
+            put("newPassword", JsonPrimitive(newPassword))
+        }.toString()
+        return executePost(
+            url = "$base/api/users/@me/change-password",
+            body = payload,
+            token = token,
+        )
+    }
+
+    suspend fun deleteAccount(
+        instanceUrl: String,
+        token: String,
+        password: String,
+        username: String,
+    ) {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val payload = buildJsonObject {
+            put("password", JsonPrimitive(password))
+            put("username", JsonPrimitive(username))
+        }.toString()
+        executeDeleteVoid(
+            url = "$base/api/users/@me",
+            token = token,
+            body = payload,
+        )
+    }
+
+    suspend fun reattachAccount(
+        instanceUrl: String,
+        token: String,
+        attachToken: String,
+    ): ReattachAccountResponse {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val payload = buildJsonObject {
+            put("token", JsonPrimitive(attachToken.trim()))
+        }.toString()
+        return executePost(
+            url = "$base/api/users/@me/reattach",
+            body = payload,
+            token = token,
+        )
+    }
+
+    // ── Convites da Instância (Admin) ──
+
+    suspend fun getAdminInvites(
+        instanceUrl: String,
+        token: String,
+        status: String? = null,
+    ): List<AdminInviteItem> {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val query = if (!status.isNullOrBlank()) "?status=${URLEncoder.encode(status, "UTF-8")}" else ""
+        return executeGet<AdminInvitesListResponse>("$base/api/admin/invites$query", token = token).invites
+    }
+
+    suspend fun createAdminInvite(
+        instanceUrl: String,
+        token: String,
+        name: String,
+        maxUses: Int? = null,
+        expiresInHours: Int? = null,
+    ): AdminInviteItem {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val expiresAt = expiresInHours?.takeIf { it > 0 }?.let {
+            System.currentTimeMillis() + it.toLong() * 3_600_000L
+        }
+        val payload = buildJsonObject {
+            put("name", JsonPrimitive(name.trim()))
+            if (maxUses != null && maxUses > 0) {
+                put("maxUses", JsonPrimitive(maxUses))
+            } else {
+                put("maxUses", JsonNull)
+            }
+            if (expiresAt != null) {
+                put("expiresAt", JsonPrimitive(expiresAt))
+            } else {
+                put("expiresAt", JsonNull)
+            }
+        }.toString()
+        return executePost(
+            url = "$base/api/admin/invites",
+            body = payload,
+            token = token,
+        )
+    }
+
+    suspend fun revokeAdminInvite(
+        instanceUrl: String,
+        token: String,
+        id: String,
+    ): AdminInviteItem {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val resp = executePost<AdminInviteWrapperResponse>(
+            url = "$base/api/admin/invites/$id/revoke",
+            body = "{}",
+            token = token,
+        )
+        return resp.invite ?: AdminInviteItem(id = id, status = "revoked")
+    }
+
+    suspend fun reinstateAdminInvite(
+        instanceUrl: String,
+        token: String,
+        id: String,
+        maxUses: Int? = null,
+        expiresInHours: Int? = null,
+    ): AdminInviteItem {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val payload = buildJsonObject {
+            if (maxUses != null && maxUses > 0) {
+                put("maxUses", JsonPrimitive(maxUses))
+            }
+            if (expiresInHours != null && expiresInHours > 0) {
+                put("expiresAt", JsonPrimitive(System.currentTimeMillis() + expiresInHours.toLong() * 3_600_000L))
+            }
+        }.toString()
+        val resp = executePost<AdminInviteWrapperResponse>(
+            url = "$base/api/admin/invites/$id/reinstate",
+            body = payload,
+            token = token,
+        )
+        return resp.invite ?: AdminInviteItem(id = id, status = "active")
+    }
+
+    suspend fun deleteAdminInvite(
+        instanceUrl: String,
+        token: String,
+        id: String,
+    ) {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        executeDeleteVoid("$base/api/admin/invites/$id", token = token)
+    }
+
+    suspend fun getAdminInviteRedemptions(
+        instanceUrl: String,
+        token: String,
+        id: String,
+    ): List<AdminInviteRedemption> {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executeGet<AdminInviteRedemptionsResponse>(
+            "$base/api/admin/invites/$id/redemptions",
+            token = token,
+        ).redemptions
+    }
+
+    // ── Federação (Admin) ──
+
+    suspend fun getFederationPeers(
+        instanceUrl: String,
+        token: String,
+    ): List<FederationPeerItem> {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executeGet<FederationPeersResponse>("$base/api/federation/peers", token = token).peers
+    }
+
+    suspend fun recheckFederationPeer(
+        instanceUrl: String,
+        token: String,
+        id: String,
+    ): FederationPeerRecheckResponse {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executePost(
+            url = "$base/api/federation/peers/$id/recheck",
+            body = "{}",
+            token = token,
+        )
+    }
+
+    suspend fun rotateFederationPeer(
+        instanceUrl: String,
+        token: String,
+        id: String,
+    ): FederationPeerRotateResponse {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executePost(
+            url = "$base/api/federation/peers/$id/rotate",
+            body = "{}",
+            token = token,
+        )
+    }
+
+    suspend fun revokeFederationPeer(
+        instanceUrl: String,
+        token: String,
+        id: String,
+    ) {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        executeDeleteVoid("$base/api/federation/peers/$id", token = token)
+    }
+
+    suspend fun resetFederationPeer(
+        instanceUrl: String,
+        token: String,
+        id: String,
+    ) {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        executePostVoid("$base/api/federation/peers/$id/reset", body = "{}", token = token)
+    }
+
+    suspend fun deleteFederationPeerPermanent(
+        instanceUrl: String,
+        token: String,
+        id: String,
+    ) {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        executeDeleteVoid("$base/api/federation/peers/$id/permanent", token = token)
+    }
+
+    suspend fun getFederationApprovals(
+        instanceUrl: String,
+        token: String,
+    ): List<FederationApprovalItem> {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executeGet<FederationApprovalsResponse>(
+            "$base/api/federation/approval-requests",
+            token = token,
+        ).requests
+    }
+
+    suspend fun approveFederationRequest(
+        instanceUrl: String,
+        token: String,
+        id: String,
+    ): FederationApprovalActionResponse {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executePost(
+            url = "$base/api/federation/approval-requests/$id/approve",
+            body = "{}",
+            token = token,
+        )
+    }
+
+    suspend fun denyFederationRequest(
+        instanceUrl: String,
+        token: String,
+        id: String,
+    ) {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        executePostVoid(
+            url = "$base/api/federation/approval-requests/$id/deny",
+            body = "{}",
+            token = token,
+        )
+    }
+
+    suspend fun getFederationResetEvents(
+        instanceUrl: String,
+        token: String,
+    ): List<FederationResetEventItem> {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executeGet<FederationResetEventsResponse>(
+            "$base/api/federation/reset-events",
+            token = token,
+        ).events
+    }
+
+    suspend fun acknowledgeFederationReset(
+        instanceUrl: String,
+        token: String,
+        origin: String,
+    ) {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val payload = buildJsonObject {
+            put("origin", JsonPrimitive(origin))
+        }.toString()
+        executePostVoid(
+            url = "$base/api/federation/reset-events/acknowledge",
+            body = payload,
+            token = token,
+        )
+    }
+
+    // ── Armazenamento (Admin) ──
+
+    suspend fun getAdminStorageStats(
+        instanceUrl: String,
+        token: String,
+    ): StorageStatsResponse {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executeGet("$base/api/admin/storage/stats", token = token)
+    }
+
+    suspend fun cleanupAdminStorage(
+        instanceUrl: String,
+        token: String,
+        dryRun: Boolean = false,
+    ): StorageCleanupResult {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val payload = buildJsonObject {
+            put("dryRun", JsonPrimitive(dryRun))
+        }.toString()
+        return executePost(
+            url = "$base/api/admin/storage/cleanup",
+            body = payload,
+            token = token,
+        )
+    }
+
+    suspend fun cleanupAdminMedia(
+        instanceUrl: String,
+        token: String,
+        olderThanDays: Int,
+        dryRun: Boolean = false,
+    ): StorageCleanupResult {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val payload = buildJsonObject {
+            put("maxAgeDays", JsonPrimitive(olderThanDays))
+            put("dryRun", JsonPrimitive(dryRun))
+        }.toString()
+        return executePost(
+            url = "$base/api/admin/storage/cleanup-media",
+            body = payload,
+            token = token,
+        )
+    }
+
+    suspend fun cleanupAdminTus(
+        instanceUrl: String,
+        token: String,
+        olderThanHours: Int,
+        dryRun: Boolean = false,
+    ): StorageCleanupResult {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val payload = buildJsonObject {
+            put("maxAgeHours", JsonPrimitive(olderThanHours))
+            put("dryRun", JsonPrimitive(dryRun))
+        }.toString()
+        return executePost(
+            url = "$base/api/admin/storage/cleanup-tus",
+            body = payload,
+            token = token,
+        )
+    }
+
+    // ── Usuários (Admin) ──
+
+    suspend fun getAdminUsers(
+        instanceUrl: String,
+        token: String,
+        q: String? = null,
+        role: String? = null,
+        showDeleted: Boolean = false,
+        page: Int = 1,
+    ): AdminUsersPageResponse {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val params = mutableListOf<String>()
+        params.add("page=${page.coerceAtLeast(1)}")
+        params.add("showDeleted=$showDeleted")
+        if (!q.isNullOrBlank()) {
+            params.add("q=${URLEncoder.encode(q.trim(), "UTF-8")}")
+        }
+        if (!role.isNullOrBlank() && role != "all") {
+            params.add("role=${URLEncoder.encode(role, "UTF-8")}")
+        }
+        return executeGet("$base/api/admin/users?${params.joinToString("&")}", token = token)
+    }
+
+    suspend fun updateAdminUserRole(
+        instanceUrl: String,
+        token: String,
+        userId: String,
+        isAdmin: Boolean,
+    ): AdminUserItem {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val payload = buildJsonObject {
+            put("isAdmin", JsonPrimitive(isAdmin))
+        }.toString()
+        return executePatch(
+            url = "$base/api/admin/users/$userId/role",
+            body = payload,
+            token = token,
+        )
+    }
+
+    suspend fun resetAdminUserPassword(
+        instanceUrl: String,
+        token: String,
+        userId: String,
+    ): ResetPasswordResponse {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executePost(
+            url = "$base/api/admin/users/$userId/reset-password",
+            body = "{}",
+            token = token,
+        )
+    }
+
+    suspend fun deleteAdminUser(
+        instanceUrl: String,
+        token: String,
+        userId: String,
+    ) {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        executeDeleteVoid("$base/api/admin/users/$userId", token = token)
+    }
+
+    // ── Atualizações & Telemetria (Admin) ──
+
+    suspend fun getAdminUpdateStatus(
+        instanceUrl: String,
+        token: String,
+        refresh: Boolean = false,
+    ): InstanceUpdateStatusResponse {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val query = if (refresh) "?refresh=true" else ""
+        return executeGet("$base/api/admin/instance/update-status$query", token = token)
+    }
+
+    suspend fun getAdminTelemetry(
+        instanceUrl: String,
+        token: String,
+    ): AdminTelemetryStatus {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executeGet("$base/api/admin/telemetry", token = token)
+    }
+
+    suspend fun updateAdminTelemetry(
+        instanceUrl: String,
+        token: String,
+        enabled: Boolean,
+    ): AdminTelemetryStatus {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val payload = buildJsonObject {
+            put("enabled", JsonPrimitive(enabled))
+        }.toString()
+        return executePut(
+            url = "$base/api/admin/telemetry",
+            body = payload,
+            token = token,
+        )
+    }
+
+    suspend fun getAdminTelemetryPreview(
+        instanceUrl: String,
+        token: String,
+    ): String {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executeGetRaw("$base/api/admin/telemetry/preview", token = token)
     }
 
     suspend fun getSoundboard(
@@ -935,6 +1510,76 @@ class BackspaceRestClient(
             }
             executeAndDecode(reqBuilder.build())
         }
+
+    private suspend inline fun <reified T> executePut(url: String, body: String, token: String?): T =
+        withContext(Dispatchers.IO) {
+            val reqBuilder = Request.Builder()
+                .url(url)
+                .put(body.toRequestBody(jsonMediaType))
+            if (!token.isNullOrBlank()) {
+                reqBuilder.header("Authorization", "Bearer $token")
+            }
+            executeAndDecode(reqBuilder.build())
+        }
+
+    private suspend fun executePostVoid(url: String, body: String, token: String?) =
+        withContext(Dispatchers.IO) {
+            val reqBuilder = Request.Builder()
+                .url(url)
+                .post(body.toRequestBody(jsonMediaType))
+            if (!token.isNullOrBlank()) {
+                reqBuilder.header("Authorization", "Bearer $token")
+            }
+            executeVoid(reqBuilder.build())
+        }
+
+    private suspend fun executeDeleteVoid(url: String, token: String?, body: String? = null) =
+        withContext(Dispatchers.IO) {
+            val reqBuilder = Request.Builder().url(url)
+            if (body != null) {
+                reqBuilder.delete(body.toRequestBody(jsonMediaType))
+            } else {
+                reqBuilder.delete()
+            }
+            if (!token.isNullOrBlank()) {
+                reqBuilder.header("Authorization", "Bearer $token")
+            }
+            executeVoid(reqBuilder.build())
+        }
+
+    private suspend fun executeGetRaw(url: String, token: String?): String =
+        withContext(Dispatchers.IO) {
+            val reqBuilder = Request.Builder().url(url).get()
+            if (!token.isNullOrBlank()) {
+                reqBuilder.header("Authorization", "Bearer $token")
+            }
+            okHttpClient.newCall(reqBuilder.build()).execute().use { response ->
+                val raw = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    val parsed = runCatching { json.decodeFromString<ApiErrorResponse>(raw) }.getOrNull()
+                    throw BackspaceApiException(
+                        statusCode = response.code,
+                        code = parsed?.code,
+                        message = parsed?.error ?: "HTTP ${response.code}",
+                    )
+                }
+                raw
+            }
+        }
+
+    private fun executeVoid(request: Request) {
+        okHttpClient.newCall(request).execute().use { response ->
+            val raw = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                val parsed = runCatching { json.decodeFromString<ApiErrorResponse>(raw) }.getOrNull()
+                throw BackspaceApiException(
+                    statusCode = response.code,
+                    code = parsed?.code,
+                    message = parsed?.error ?: "HTTP ${response.code}",
+                )
+            }
+        }
+    }
 
     private inline fun <reified T> executeAndDecode(request: Request): T {
         okHttpClient.newCall(request).execute().use { response ->
