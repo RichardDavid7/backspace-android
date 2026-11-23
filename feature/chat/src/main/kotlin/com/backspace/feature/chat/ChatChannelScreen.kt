@@ -1207,7 +1207,7 @@ private fun formatFileSize(bytes: Long): String = when {
     else -> "$bytes B"
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 private fun MediaPickerDialog(
     instanceUrl: String,
