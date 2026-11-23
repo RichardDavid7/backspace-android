@@ -31,7 +31,7 @@ data class LiveKitTokenRequest(val channelId: String)
 @Serializable
 data class SendMessageRequest(
     val content: String? = null,
-    val attachmentIds: List<String>? = null,
+    val attachments: List<String>? = null,
     val replyToId: String? = null,
 )
 
@@ -131,12 +131,30 @@ class BackspaceRestClient(
                 SendMessageRequest.serializer(),
                 SendMessageRequest(
                     content = content?.takeIf { it.isNotBlank() },
-                    attachmentIds = attachmentIds?.takeIf { it.isNotEmpty() },
+                    attachments = attachmentIds?.takeIf { it.isNotEmpty() },
                     replyToId = replyToId,
                 ),
             ),
             token = token,
         )
+    }
+
+    suspend fun deleteMessage(
+        instanceUrl: String,
+        token: String,
+        messageId: String,
+    ) = withContext(Dispatchers.IO) {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val req = Request.Builder()
+            .url("$base/api/messages/$messageId")
+            .header("Authorization", "Bearer $token")
+            .delete()
+            .build()
+        okHttpClient.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                throw BackspaceApiException(resp.code, null, "Delete failed (HTTP ${resp.code})")
+            }
+        }
     }
 
     /**

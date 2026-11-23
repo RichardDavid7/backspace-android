@@ -21,6 +21,10 @@
     <string name="voice_screen_share_badge">Экран</string>
     <string name="chat_message_placeholder">Напишите сообщение...</string>
     <string name="chat_empty">Сообщений пока нет.</string>
+    <string name="chat_queued_offline">В очереди · ожидание подключения...</string>
+    <string name="chat_replying_to">Ответ для</string>
+    <string name="chat_action_reply">Ответить</string>
+    <string name="chat_action_delete">Удалить</string>
     <string name="soundboard_title">Саундборд</string>
     <string name="soundboard_search">Поиск звуков...</string>
     <string name="soundboard_volume">Громкость саундборда</string>

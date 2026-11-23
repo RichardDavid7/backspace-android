@@ -21,6 +21,10 @@
     <string name="voice_screen_share_badge">屏幕</string>
     <string name="chat_message_placeholder">输入消息...</string>
     <string name="chat_empty">暂无消息。</string>
+    <string name="chat_queued_offline">已排队 · 等待重新连接...</string>
+    <string name="chat_replying_to">回复</string>
+    <string name="chat_action_reply">回复</string>
+    <string name="chat_action_delete">删除</string>
     <string name="soundboard_title">音效板</string>
     <string name="soundboard_search">搜索音效...</string>
     <string name="soundboard_volume">音效板音量</string>

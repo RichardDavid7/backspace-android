@@ -88,12 +88,32 @@ data class Channel(
 }
 
 @Serializable
+data class Role(
+    val id: String,
+    val spaceId: String = "",
+    val name: String = "",
+    val color: String = "",
+    val position: Int = 0,
+    val isEveryone: Boolean = false,
+)
+
+@Serializable
 data class MemberWithUser(
     val userId: String,
     val nickname: String? = null,
     val user: User? = null,
+    val roles: List<Role> = emptyList(),
 ) {
     val label: String get() = nickname?.takeIf { it.isNotBlank() } ?: user?.label ?: userId
+
+    /**
+     * Cor hex do cargo mais alto com cor definida (ignorando @everyone / vazio).
+     */
+    val highestRoleColorHex: String?
+        get() = roles
+            .filter { !it.isEveryone && it.color.isNotBlank() && it.color != "#000000" && it.color != "transparent" }
+            .maxByOrNull { it.position }
+            ?.color
 }
 
 @Serializable

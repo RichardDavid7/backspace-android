@@ -184,6 +184,8 @@ class BackspaceVoiceEngine(
                 wsClient.sendVoiceStatus(
                     isMuted = _state.value.isMuted,
                     isDeafened = _state.value.isDeafened,
+                    isCameraOn = false,
+                    isScreenSharing = false,
                 )
 
                 VoiceForegroundService.startOrUpdate(
@@ -422,7 +424,12 @@ class BackspaceVoiceEngine(
         lkRoom.localParticipant.setMicrophoneEnabled(!isMuted && !isDeafened)
         applyRemoteAudioVolume(lkRoom, muted = isDeafened)
         publishDeafenDataChannel(lkRoom, isDeafened)
-        wsClient.sendVoiceStatus(isMuted = isMuted, isDeafened = isDeafened)
+        wsClient.sendVoiceStatus(
+            isMuted = isMuted,
+            isDeafened = isDeafened,
+            isCameraOn = _state.value.isCameraOn,
+            isScreenSharing = _state.value.isScreenSharing,
+        )
 
         VoiceForegroundService.startOrUpdate(
             context = appContext,
@@ -431,6 +438,7 @@ class BackspaceVoiceEngine(
             isMuted = isMuted,
             isDeafened = isDeafened,
             bitrateKbps = _state.value.effectiveAudio.bitrateKbps,
+            isScreenSharing = _state.value.isScreenSharing,
         )
         scheduleIdleSuspendCheck()
     }
@@ -509,7 +517,7 @@ class BackspaceVoiceEngine(
                     }
                     is RoomEvent.Disconnected -> {
                         if (_state.value.status != VoiceConnectionStatus.IDLE) {
-                            _state.update { it.copy(status = VoiceConnectionStatus.IDLE) }
+                            leaveChannel()
                         }
                     }
                     else -> Unit
@@ -598,9 +606,14 @@ class BackspaceVoiceEngine(
         val localName = localIdParts.getOrElse(1) { wsClient.snapshot.value.currentUser?.label ?: "You" }
         val tiles = mutableListOf<VoiceVideoTile>()
 
+        var actualLocalCamera = false
+        var actualLocalScreenShare = false
+
         local.videoTrackPublications.forEach { (pub, track) ->
             val vTrack = track as? VideoTrack ?: return@forEach
             if (!pub.muted) {
+                if (pub.source == Track.Source.CAMERA) actualLocalCamera = true
+                if (pub.source == Track.Source.SCREEN_SHARE) actualLocalScreenShare = true
                 tiles.add(
                     VoiceVideoTile(
                         id = "local:${pub.sid}",
@@ -611,6 +624,27 @@ class BackspaceVoiceEngine(
                     ),
                 )
             }
+        }
+
+        // Sincroniza estado real se o Android encerrou a captura de tela ou câmera externamente
+        val prev = _state.value
+        val mediaStateChanged = (prev.isCameraOn != actualLocalCamera) || (prev.isScreenSharing != actualLocalScreenShare)
+        if (mediaStateChanged && prev.status == VoiceConnectionStatus.CONNECTED) {
+            wsClient.sendVoiceStatus(
+                isMuted = prev.isMuted,
+                isDeafened = prev.isDeafened,
+                isCameraOn = actualLocalCamera,
+                isScreenSharing = actualLocalScreenShare,
+            )
+            VoiceForegroundService.startOrUpdate(
+                context = appContext,
+                spaceName = prev.spaceName,
+                channelName = prev.channelName,
+                isMuted = prev.isMuted,
+                isDeafened = prev.isDeafened,
+                bitrateKbps = prev.effectiveAudio.bitrateKbps,
+                isScreenSharing = actualLocalScreenShare,
+            )
         }
 
         val list = mutableListOf(
@@ -655,7 +689,14 @@ class BackspaceVoiceEngine(
                 ),
             )
         }
-        _state.update { it.copy(participants = list, videoTiles = tiles) }
+        _state.update {
+            it.copy(
+                isCameraOn = actualLocalCamera,
+                isScreenSharing = actualLocalScreenShare,
+                participants = list,
+                videoTiles = tiles,
+            )
+        }
     }
 
     private fun applyRemoteAudioVolume(lkRoom: Room, muted: Boolean) {

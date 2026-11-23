@@ -5,11 +5,15 @@ import com.backspace.core.model.ChannelCategory
 import com.backspace.core.model.ChosenUserStatus
 import com.backspace.core.model.InstanceStreamingLimits
 import com.backspace.core.model.Message
+import com.backspace.core.model.MessageReaction
+import com.backspace.core.model.PendingAttachmentPayload
+import com.backspace.core.model.QueuedOutgoingMessage
 import com.backspace.core.model.Space
 import com.backspace.core.model.SpaceVoiceState
 import com.backspace.core.model.StatusRevertDuration
 import com.backspace.core.model.User
 import com.backspace.core.model.VoiceUserState
+import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -54,6 +58,7 @@ data class RealtimeSnapshot(
     val voiceUserStates: Map<String, VoiceUserState> = emptyMap(),
     val spaceVoiceStates: Map<String, SpaceVoiceState> = emptyMap(),
     val messagesByChannel: Map<String, List<Message>> = emptyMap(),
+    val queuedMessages: List<QueuedOutgoingMessage> = emptyList(),
     val lastError: String? = null,
 )
 
@@ -213,6 +218,110 @@ class BackspaceWebSocketClient(
         )
     }
 
+    fun sendReactionAdd(messageId: String, emoji: String) {
+        sendJson(
+            buildJsonObject {
+                put("type", "reaction_add")
+                put("messageId", messageId)
+                put("emoji", emoji)
+            },
+        )
+    }
+
+    fun sendReactionRemove(messageId: String, emoji: String) {
+        sendJson(
+            buildJsonObject {
+                put("type", "reaction_remove")
+                put("messageId", messageId)
+                put("emoji", emoji)
+            },
+        )
+    }
+
+    fun removeLocalMessage(channelId: String, messageId: String) {
+        _snapshot.update { current ->
+            val list = current.messagesByChannel[channelId] ?: return@update current
+            current.copy(
+                messagesByChannel = current.messagesByChannel + (
+                    channelId to list.filterNot { it.id == messageId }
+                ),
+            )
+        }
+    }
+
+    /**
+     * Envia mensagem (com eventuais anexos) imediatamente se online, ou coloca na fila offline
+     * e envia automaticamente assim que reconectar.
+     */
+    fun enqueueOrSendMessage(
+        channelId: String,
+        content: String?,
+        replyToId: String? = null,
+        attachments: List<PendingAttachmentPayload> = emptyList(),
+    ) {
+        val queued = QueuedOutgoingMessage(
+            localId = UUID.randomUUID().toString(),
+            channelId = channelId,
+            content = content?.trim()?.ifBlank { null },
+            replyToId = replyToId,
+            attachments = attachments,
+        )
+        if (queued.content == null && queued.attachments.isEmpty()) return
+
+        _snapshot.update { it.copy(queuedMessages = it.queuedMessages + queued) }
+        if (_snapshot.value.connectionState == WsConnectionState.AUTHENTICATED) {
+            flushMessageQueue()
+        }
+    }
+
+    fun flushMessageQueue() {
+        val url = activeInstanceUrl ?: return
+        val token = activeToken ?: return
+        scope.launch {
+            while (true) {
+                val next = _snapshot.value.queuedMessages.firstOrNull() ?: break
+                val result = runCatching {
+                    val uploadedIds = next.attachments.map { att ->
+                        restClient.uploadFileTus(
+                            instanceUrl = url,
+                            token = token,
+                            originalName = att.fileName,
+                            mimeType = att.mimeType,
+                            bytes = att.bytes,
+                        ).id
+                    }
+                    restClient.sendMessage(
+                        instanceUrl = url,
+                        token = token,
+                        channelId = next.channelId,
+                        content = next.content,
+                        attachmentIds = uploadedIds,
+                        replyToId = next.replyToId,
+                    )
+                }
+                result.onSuccess { sent ->
+                    appendLocalMessage(next.channelId, sent)
+                    _snapshot.update { cur ->
+                        cur.copy(queuedMessages = cur.queuedMessages.filterNot { it.localId == next.localId })
+                    }
+                }.onFailure { err ->
+                    // Erro HTTP 4xx (ex.: permissão) remove da fila; erro de rede mantém na fila para retry
+                    if (err is BackspaceApiException && err.statusCode in 400..499) {
+                        _snapshot.update { cur ->
+                            cur.copy(
+                                queuedMessages = cur.queuedMessages.filterNot { it.localId == next.localId },
+                                lastError = err.message,
+                            )
+                        }
+                    } else {
+                        _snapshot.update { it.copy(lastError = err.message) }
+                        break
+                    }
+                }
+            }
+        }
+    }
+
     private fun openSocket(instanceUrl: String, token: String) {
         webSocket?.cancel()
         heartbeatJob?.cancel()
@@ -321,9 +430,11 @@ class BackspaceWebSocketClient(
             "category_updated" -> handleCategoryUpdated(obj)
             "channel_updated" -> handleChannelUpdated(obj)
             "presence_update" -> handlePresenceUpdate(obj)
-            "message_create" -> handleMessageCreate(obj)
-            "message_edit" -> handleMessageEdit(obj)
-            "message_delete" -> handleMessageDelete(obj)
+            "message_create", "message_created" -> handleMessageCreate(obj)
+            "message_edit", "message_updated" -> handleMessageEdit(obj)
+            "message_delete", "message_deleted" -> handleMessageDelete(obj)
+            "reaction_added" -> handleReactionAdded(obj)
+            "reaction_removed" -> handleReactionRemoved(obj)
             "user_updated" -> handleUserUpdated(obj)
         }
     }
@@ -353,6 +464,9 @@ class BackspaceWebSocketClient(
                 spaceVoiceStates = spaceVoiceStates,
                 lastError = null,
             )
+        }
+        if (_snapshot.value.queuedMessages.isNotEmpty()) {
+            flushMessageQueue()
         }
     }
 
@@ -511,11 +625,54 @@ class BackspaceWebSocketClient(
     private fun handleMessageDelete(obj: JsonObject) {
         val channelId = obj["channelId"]?.jsonPrimitive?.contentOrNull ?: return
         val messageId = obj["messageId"]?.jsonPrimitive?.contentOrNull ?: return
+        removeLocalMessage(channelId, messageId)
+    }
+
+    private fun handleReactionAdded(obj: JsonObject) {
+        val channelId = obj["channelId"]?.jsonPrimitive?.contentOrNull ?: return
+        val messageId = obj["messageId"]?.jsonPrimitive?.contentOrNull ?: return
+        val reactionElem = obj["reaction"]
+        val reaction = if (reactionElem != null) {
+            runCatching { json.decodeFromJsonElement<MessageReaction>(reactionElem) }.getOrNull()
+        } else {
+            val userId = obj["userId"]?.jsonPrimitive?.contentOrNull ?: return
+            val emoji = obj["emoji"]?.jsonPrimitive?.contentOrNull ?: return
+            MessageReaction(id = "$messageId:$userId:$emoji", messageId = messageId, userId = userId, emoji = emoji)
+        } ?: return
+
         _snapshot.update { current ->
             val list = current.messagesByChannel[channelId] ?: return@update current
             current.copy(
                 messagesByChannel = current.messagesByChannel + (
-                    channelId to list.filterNot { it.id == messageId }
+                    channelId to list.map { msg ->
+                        if (msg.id == messageId && msg.reactions.none { it.userId == reaction.userId && it.emoji == reaction.emoji }) {
+                            msg.copy(reactions = msg.reactions + reaction)
+                        } else {
+                            msg
+                        }
+                    }
+                ),
+            )
+        }
+    }
+
+    private fun handleReactionRemoved(obj: JsonObject) {
+        val channelId = obj["channelId"]?.jsonPrimitive?.contentOrNull ?: return
+        val messageId = obj["messageId"]?.jsonPrimitive?.contentOrNull ?: return
+        val userId = obj["userId"]?.jsonPrimitive?.contentOrNull ?: return
+        val emoji = obj["emoji"]?.jsonPrimitive?.contentOrNull ?: return
+
+        _snapshot.update { current ->
+            val list = current.messagesByChannel[channelId] ?: return@update current
+            current.copy(
+                messagesByChannel = current.messagesByChannel + (
+                    channelId to list.map { msg ->
+                        if (msg.id == messageId) {
+                            msg.copy(reactions = msg.reactions.filterNot { it.userId == userId && it.emoji == emoji })
+                        } else {
+                            msg
+                        }
+                    }
                 ),
             )
         }

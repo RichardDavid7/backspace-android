@@ -96,6 +96,13 @@ class VoiceForegroundService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        // Se o usuário deslizar o app para fechar, encerra a call limpa e notifica o servidor
+        VoiceServiceControllerBridge.onDisconnect?.invoke()
+        stopSelf()
+    }
+
     private fun ensureNotificationChannel() {
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val existing = manager.getNotificationChannel(NOTIFICATION_CHANNEL_ID)

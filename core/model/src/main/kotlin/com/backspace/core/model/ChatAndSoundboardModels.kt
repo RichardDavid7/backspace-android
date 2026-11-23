@@ -41,6 +41,7 @@ data class Message(
     val createdAt: Long = 0L,
     val editedAt: Long? = null,
     val replyToId: String? = null,
+    val replyTo: Message? = null,
     val user: User? = null,
     val attachments: List<MessageAttachment> = emptyList(),
     val reactions: List<MessageReaction> = emptyList(),
@@ -48,6 +49,24 @@ data class Message(
     val authorLabel: String get() = user?.label ?: userId
     val safeContent: String get() = content.orEmpty()
 }
+
+data class PendingAttachmentPayload(
+    val id: String,
+    val fileName: String,
+    val mimeType: String,
+    val bytes: ByteArray,
+) {
+    val isImage: Boolean get() = mimeType.startsWith("image/", ignoreCase = true)
+}
+
+data class QueuedOutgoingMessage(
+    val localId: String,
+    val channelId: String,
+    val content: String?,
+    val replyToId: String? = null,
+    val attachments: List<PendingAttachmentPayload> = emptyList(),
+    val createdAt: Long = System.currentTimeMillis(),
+)
 
 @Serializable
 data class SoundboardSound(

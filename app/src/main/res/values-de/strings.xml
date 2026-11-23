@@ -21,6 +21,10 @@
     <string name="voice_screen_share_badge">Bildschirm</string>
     <string name="chat_message_placeholder">Nachricht schreiben...</string>
     <string name="chat_empty">Noch keine Nachrichten.</string>
+    <string name="chat_queued_offline">In Warteschlange · warte auf Verbindung...</string>
+    <string name="chat_replying_to">Antwort an</string>
+    <string name="chat_action_reply">Antworten</string>
+    <string name="chat_action_delete">Löschen</string>
     <string name="soundboard_title">Soundboard</string>
     <string name="soundboard_search">Sounds suchen...</string>
     <string name="soundboard_volume">Soundboard-Lautstärke</string>

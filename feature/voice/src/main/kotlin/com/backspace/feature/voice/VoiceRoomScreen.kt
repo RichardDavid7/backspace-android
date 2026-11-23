@@ -2,6 +2,8 @@ package com.backspace.feature.voice
 
 import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.pm.ActivityInfo
 import android.media.projection.MediaProjectionManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -33,6 +35,7 @@ import androidx.compose.material.icons.filled.HeadsetOff
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.ScreenShare
 import androidx.compose.material.icons.filled.StopScreenShare
 import androidx.compose.material.icons.filled.Videocam
@@ -69,6 +72,7 @@ import com.backspace.core.model.AudioOutputRoute
 import com.backspace.core.voice.BackspaceVoiceEngine
 import com.backspace.core.voice.VoiceVideoTile
 import io.livekit.android.renderer.TextureViewRenderer
+import livekit.org.webrtc.RendererCommon
 
 @Composable
 fun VoiceRoomScreen(
@@ -87,9 +91,11 @@ fun VoiceRoomScreen(
 ) {
     val colors = AetherTheme.colors
     val context = LocalContext.current
+    val activity = remember(context) { context.findActivity() }
     val state by voiceEngine.state.collectAsStateWithLifecycle()
     val policy = state.effectiveAudio.policy
     var fullscreenTileId by remember { mutableStateOf<String?>(null) }
+    var isLandscapeForced by remember { mutableStateOf(false) }
 
     val screenCaptureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
@@ -100,6 +106,16 @@ fun VoiceRoomScreen(
     }
 
     val fullscreenTile = state.videoTiles.firstOrNull { it.id == fullscreenTileId }
+
+    DisposableEffect(fullscreenTile != null) {
+        onDispose {
+            if (isLandscapeForced) {
+                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                isLandscapeForced = false
+            }
+        }
+    }
+
     if (fullscreenTile != null) {
         Box(
             modifier = Modifier
@@ -113,15 +129,41 @@ fun VoiceRoomScreen(
                 voiceEngine = voiceEngine,
                 modifier = Modifier.fillMaxSize(),
             )
-            IconButton(
-                onClick = { fullscreenTileId = null },
+            Row(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(16.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.6f)),
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Icon(Icons.Default.Close, contentDescription = "Close fullscreen", tint = Color.White)
+                IconButton(
+                    onClick = {
+                        isLandscapeForced = !isLandscapeForced
+                        activity?.requestedOrientation = if (isLandscapeForced) {
+                            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                        } else {
+                            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                        }
+                    },
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.6f)),
+                ) {
+                    Icon(Icons.Default.ScreenRotation, contentDescription = "Rotate", tint = Color.White)
+                }
+                IconButton(
+                    onClick = {
+                        fullscreenTileId = null
+                        if (isLandscapeForced) {
+                            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                            isLandscapeForced = false
+                        }
+                    },
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.6f)),
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "Close fullscreen", tint = Color.White)
+                }
             }
         }
         return
@@ -160,7 +202,6 @@ fun VoiceRoomScreen(
             }
         },
         bottomBar = {
-            // Dock ergonômico fixo na parte inferior
             Surface(
                 color = colors.bgChannel,
                 tonalElevation = 4.dp,
@@ -242,7 +283,6 @@ fun VoiceRoomScreen(
                 )
             }
 
-            // Rota de saída de áudio (BT / Speaker / Ear)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -260,42 +300,44 @@ fun VoiceRoomScreen(
                 }
             }
 
-            // Streams ativos (Câmeras e Transmissões de Tela) — toque para tela cheia
+            // Grade adaptativa de vídeos/transmissões (1 coluna para 1 stream, 2 colunas para múltiplos)
             if (state.videoTiles.isNotEmpty()) {
-                state.videoTiles.forEach { tile ->
-                    Box(
+                val sortedTiles = state.videoTiles.sortedByDescending { it.isScreenShare }
+                if (sortedTiles.size == 1) {
+                    VideoTileCard(
+                        tile = sortedTiles.first(),
+                        voiceEngine = voiceEngine,
+                        screenShareBadge = screenShareBadge,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .aspectRatio(16f / 9f)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(Color.Black)
-                            .clickable { fullscreenTileId = tile.id },
-                    ) {
-                        LiveKitVideoBox(
-                            tile = tile,
-                            voiceEngine = voiceEngine,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                        Surface(
-                            color = Color.Black.copy(alpha = 0.6f),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier
-                                .align(Alignment.BottomStart)
-                                .padding(8.dp),
+                            .aspectRatio(16f / 9f),
+                        onClick = { fullscreenTileId = sortedTiles.first().id },
+                    )
+                } else {
+                    sortedTiles.chunked(2).forEach { rowTiles ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            val badge = if (tile.isScreenShare) " · $screenShareBadge" else ""
-                            Text(
-                                text = "${tile.participantName}$badge",
-                                color = Color.White,
-                                style = MaterialTheme.typography.labelMedium,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            )
+                            rowTiles.forEach { tile ->
+                                VideoTileCard(
+                                    tile = tile,
+                                    voiceEngine = voiceEngine,
+                                    screenShareBadge = screenShareBadge,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .aspectRatio(16f / 10f),
+                                    onClick = { fullscreenTileId = tile.id },
+                                )
+                            }
+                            if (rowTiles.size == 1) {
+                                Spacer(Modifier.weight(1f))
+                            }
                         }
                     }
                 }
             }
 
-            // Participantes (com opção de ocultar quem está sem vídeo quando há vídeo ativo)
             val visibleParticipants = if (state.userPrefs.hideNonVideoParticipants && state.videoTiles.isNotEmpty()) {
                 state.participants.filter { it.hasVideo }
             } else {
@@ -332,7 +374,6 @@ fun VoiceRoomScreen(
                 }
             }
 
-            // Painel Opus Hierárquico + Vídeo
             AetherSurfaceCard {
                 Text(
                     text = opusTitle,
@@ -434,7 +475,6 @@ fun VoiceRoomScreen(
                 }
             }
 
-            // Telemetria Opus
             AetherSurfaceCard {
                 Text(
                     text = telemetryTitle,
@@ -451,6 +491,43 @@ fun VoiceRoomScreen(
                     color = colors.textSecondary,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun VideoTileCard(
+    tile: VoiceVideoTile,
+    voiceEngine: BackspaceVoiceEngine,
+    screenShareBadge: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color.Black)
+            .clickable(onClick = onClick),
+    ) {
+        LiveKitVideoBox(
+            tile = tile,
+            voiceEngine = voiceEngine,
+            modifier = Modifier.fillMaxSize(),
+        )
+        Surface(
+            color = Color.Black.copy(alpha = 0.65f),
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(6.dp),
+        ) {
+            val badge = if (tile.isScreenShare) " · $screenShareBadge" else ""
+            Text(
+                text = "${tile.participantName}$badge",
+                color = Color.White,
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+            )
         }
     }
 }
@@ -495,14 +572,22 @@ private fun LiveKitVideoBox(
         factory = { ctx ->
             TextureViewRenderer(ctx).also { renderer ->
                 voiceEngine.initVideoRenderer(renderer)
+                renderer.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
                 tile.videoTrack.addRenderer(renderer)
                 rendererHolder[0] = renderer
             }
         },
         update = { renderer ->
+            renderer.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
             if (rendererHolder[0] !== renderer) {
                 rendererHolder[0] = renderer
             }
         },
     )
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

@@ -15,8 +15,8 @@ android {
         applicationId = "com.backspace.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = (findProperty("versionCode") as? String)?.toIntOrNull() ?: 3
-        versionName = (findProperty("versionName") as? String)?.takeIf { it.isNotBlank() } ?: "0.3.0-alpha"
+        versionCode = (findProperty("versionCode") as? String)?.toIntOrNull() ?: 4
+        versionName = (findProperty("versionName") as? String)?.takeIf { it.isNotBlank() } ?: "0.4.0-alpha"
     }
 
     signingConfigs {
