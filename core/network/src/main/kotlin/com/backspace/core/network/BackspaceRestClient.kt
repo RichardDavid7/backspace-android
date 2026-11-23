@@ -18,8 +18,10 @@ import com.backspace.core.model.InviteCodeExtractor
 import com.backspace.core.model.LiveKitTokenResponse
 import com.backspace.core.model.Message
 import com.backspace.core.model.MessageAttachment
+import com.backspace.core.model.Role
 import com.backspace.core.model.SoundboardListResponse
 import com.backspace.core.model.Space
+import com.backspace.core.model.SpaceBanItem
 import com.backspace.core.model.SpaceInviteResponse
 import com.backspace.core.model.StickerItem
 import com.backspace.core.model.User
@@ -37,6 +39,32 @@ import java.util.concurrent.TimeUnit
 
 @Serializable
 data class LoginRequest(val username: String, val password: String)
+
+@Serializable
+data class RegisterRequest(
+    val username: String,
+    val password: String,
+    val displayName: String? = null,
+    val inviteToken: String? = null,
+)
+
+@Serializable
+data class EditMessageRequest(val content: String)
+
+@Serializable
+data class CreateGroupDmUser(val userId: String)
+
+@Serializable
+data class CreateGroupDmRequest(val users: List<CreateGroupDmUser>)
+
+@Serializable
+data class CreateRoleRequest(val name: String, val color: String = "#7C6CF6")
+
+@Serializable
+data class BanMemberRequest(val userId: String, val reason: String? = null)
+
+@Serializable
+data class UpdateChannelNameRequest(val name: String)
 
 @Serializable
 data class LoginResponse(val token: String, val user: User)
@@ -131,6 +159,29 @@ class BackspaceRestClient(
         return executePost(
             url = "$base/api/auth/login",
             body = json.encodeToString(LoginRequest.serializer(), LoginRequest(username, password)),
+            token = null,
+        )
+    }
+
+    suspend fun register(
+        instanceUrl: String,
+        username: String,
+        password: String,
+        displayName: String? = null,
+        inviteToken: String? = null,
+    ): LoginResponse {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executePost(
+            url = "$base/api/auth/register",
+            body = json.encodeToString(
+                RegisterRequest.serializer(),
+                RegisterRequest(
+                    username = username,
+                    password = password,
+                    displayName = displayName?.ifBlank { null },
+                    inviteToken = inviteToken?.ifBlank { null },
+                ),
+            ),
             token = null,
         )
     }
@@ -499,6 +550,156 @@ class BackspaceRestClient(
             }
         }
     }
+
+    suspend fun editMessage(
+        instanceUrl: String,
+        token: String,
+        messageId: String,
+        content: String,
+    ): Message {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executePatch(
+            url = "$base/api/messages/$messageId",
+            body = json.encodeToString(EditMessageRequest.serializer(), EditMessageRequest(content)),
+            token = token,
+        )
+    }
+
+    suspend fun editDmMessage(
+        instanceUrl: String,
+        token: String,
+        messageId: String,
+        content: String,
+    ): DmMessage {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executePatch(
+            url = "$base/api/dm/messages/$messageId",
+            body = json.encodeToString(EditMessageRequest.serializer(), EditMessageRequest(content)),
+            token = token,
+        )
+    }
+
+    suspend fun createGroupDm(
+        instanceUrl: String,
+        token: String,
+        userIds: List<String>,
+    ): DmChannel {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executePost(
+            url = "$base/api/dm/group",
+            body = json.encodeToString(
+                CreateGroupDmRequest.serializer(),
+                CreateGroupDmRequest(users = userIds.map { CreateGroupDmUser(it) }),
+            ),
+            token = token,
+        )
+    }
+
+    suspend fun removeFriend(instanceUrl: String, token: String, friendUserId: String) =
+        withContext(Dispatchers.IO) {
+            val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+            val req = Request.Builder()
+                .url("$base/api/social/friends/$friendUserId")
+                .header("Authorization", "Bearer $token")
+                .delete()
+                .build()
+            okHttpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) throw BackspaceApiException(resp.code, null, "HTTP ${resp.code}")
+            }
+        }
+
+    suspend fun renameChannel(instanceUrl: String, token: String, channelId: String, newName: String): Channel {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executePatch(
+            url = "$base/api/channels/$channelId",
+            body = json.encodeToString(UpdateChannelNameRequest.serializer(), UpdateChannelNameRequest(newName)),
+            token = token,
+        )
+    }
+
+    suspend fun deleteChannel(instanceUrl: String, token: String, channelId: String) =
+        withContext(Dispatchers.IO) {
+            val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+            val req = Request.Builder()
+                .url("$base/api/channels/$channelId")
+                .header("Authorization", "Bearer $token")
+                .delete()
+                .build()
+            okHttpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) throw BackspaceApiException(resp.code, null, "HTTP ${resp.code}")
+            }
+        }
+
+    suspend fun createRole(instanceUrl: String, token: String, spaceId: String, name: String, color: String): Role {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executePost(
+            url = "$base/api/spaces/$spaceId/roles",
+            body = json.encodeToString(CreateRoleRequest.serializer(), CreateRoleRequest(name, color)),
+            token = token,
+        )
+    }
+
+    suspend fun deleteRole(instanceUrl: String, token: String, spaceId: String, roleId: String) =
+        withContext(Dispatchers.IO) {
+            val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+            val req = Request.Builder()
+                .url("$base/api/spaces/$spaceId/roles/$roleId")
+                .header("Authorization", "Bearer $token")
+                .delete()
+                .build()
+            okHttpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) throw BackspaceApiException(resp.code, null, "HTTP ${resp.code}")
+            }
+        }
+
+    suspend fun kickMember(instanceUrl: String, token: String, spaceId: String, userId: String) =
+        withContext(Dispatchers.IO) {
+            val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+            val req = Request.Builder()
+                .url("$base/api/spaces/$spaceId/members/$userId")
+                .header("Authorization", "Bearer $token")
+                .delete()
+                .build()
+            okHttpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) throw BackspaceApiException(resp.code, null, "HTTP ${resp.code}")
+            }
+        }
+
+    suspend fun getBans(instanceUrl: String, token: String, spaceId: String): List<SpaceBanItem> {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executeGet("$base/api/spaces/$spaceId/bans", token = token)
+    }
+
+    suspend fun banMember(instanceUrl: String, token: String, spaceId: String, userId: String, reason: String? = null) =
+        withContext(Dispatchers.IO) {
+            val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+            val req = Request.Builder()
+                .url("$base/api/spaces/$spaceId/bans")
+                .header("Authorization", "Bearer $token")
+                .post(
+                    json.encodeToString(
+                        BanMemberRequest.serializer(),
+                        BanMemberRequest(userId = userId, reason = reason?.ifBlank { null }),
+                    ).toRequestBody(jsonMediaType),
+                )
+                .build()
+            okHttpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) throw BackspaceApiException(resp.code, null, "HTTP ${resp.code}")
+            }
+        }
+
+    suspend fun unbanMember(instanceUrl: String, token: String, spaceId: String, userId: String) =
+        withContext(Dispatchers.IO) {
+            val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+            val req = Request.Builder()
+                .url("$base/api/spaces/$spaceId/bans/$userId")
+                .header("Authorization", "Bearer $token")
+                .delete()
+                .build()
+            okHttpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) throw BackspaceApiException(resp.code, null, "HTTP ${resp.code}")
+            }
+        }
 
     /**
      * Faz upload de anexo via protocolo tus (`/api/files`) usado pelo servidor Backspace.

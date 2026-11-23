@@ -1,7 +1,9 @@
 package com.backspace.feature.spaces
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -65,6 +67,7 @@ import com.backspace.core.model.ExploreSpaceItem
 import com.backspace.core.model.MemberWithUser
 import com.backspace.core.model.PermissionBits
 import com.backspace.core.model.Space
+import com.backspace.core.model.SpaceBanItem
 import com.backspace.core.model.SpaceTreeItem
 import com.backspace.core.model.StatusRevertDuration
 import com.backspace.core.network.BackspaceRestClient
@@ -74,6 +77,7 @@ import com.backspace.core.voice.BackspaceVoiceEngine
 import com.backspace.core.voice.VoiceConnectionStatus
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SpacesScreen(
     instanceUrl: String,
@@ -114,6 +118,7 @@ fun SpacesScreen(
     var selectedProfileMember by remember { mutableStateOf<MemberWithUser?>(null) }
     var showSpaceAdminDialog by remember { mutableStateOf(false) }
     var showAddOrExploreDialog by remember { mutableStateOf(false) }
+    var editingChannel by remember { mutableStateOf<Channel?>(null) }
     val collapsedCategories = remember { mutableStateMapOf<String, Boolean>() }
 
     val selectedSpace = snapshot.spaces.firstOrNull { it.id == selectedSpaceId }
@@ -161,6 +166,7 @@ fun SpacesScreen(
             instanceUrl = instanceUrl,
             member = member,
             isMe = member.userId == snapshot.currentUser?.id,
+            canModerate = isSpaceAdmin && member.userId != snapshot.currentUser?.id,
             sendDmLabel = sendDmLabel,
             onSendDm = {
                 selectedProfileMember = null
@@ -174,7 +180,85 @@ fun SpacesScreen(
                     }
                 }
             },
+            onKick = {
+                val sid = selectedSpace?.id ?: return@UserProfileDialog
+                selectedProfileMember = null
+                scope.launch {
+                    runCatching {
+                        restClient.kickMember(instanceUrl, jwtToken, sid, member.userId)
+                        wsClient.refreshSpaceDetail(sid)
+                    }
+                }
+            },
+            onBan = {
+                val sid = selectedSpace?.id ?: return@UserProfileDialog
+                selectedProfileMember = null
+                scope.launch {
+                    runCatching {
+                        restClient.banMember(instanceUrl, jwtToken, sid, member.userId)
+                        wsClient.refreshSpaceDetail(sid)
+                    }
+                }
+            },
             onDismiss = { selectedProfileMember = null },
+        )
+    }
+
+    editingChannel?.let { ch ->
+        var editedName by remember(ch.id) { mutableStateOf(ch.name) }
+        AlertDialog(
+            onDismissRequest = { editingChannel = null },
+            containerColor = colors.bgChannel,
+            title = { Text("Editar Canal", color = colors.textPrimary) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = editedName,
+                        onValueChange = { editedName = it },
+                        label = { Text("Nome do canal") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            val sid = selectedSpace?.id ?: return@OutlinedButton
+                            editingChannel = null
+                            scope.launch {
+                                runCatching {
+                                    restClient.deleteChannel(instanceUrl, jwtToken, ch.id)
+                                    wsClient.refreshSpaceDetail(sid)
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Apagar canal", color = colors.accentPeach)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = editedName.isNotBlank(),
+                    onClick = {
+                        val sid = selectedSpace?.id ?: return@TextButton
+                        val nextName = editedName.trim()
+                        editingChannel = null
+                        scope.launch {
+                            runCatching {
+                                restClient.renameChannel(instanceUrl, jwtToken, ch.id, nextName)
+                                wsClient.refreshSpaceDetail(sid)
+                            }
+                        }
+                    },
+                ) {
+                    Text(saveLabel, color = colors.accentPrimary)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingChannel = null }) {
+                    Text(cancelLabel, color = colors.textSecondary)
+                }
+            },
         )
     }
 
@@ -393,9 +477,11 @@ fun SpacesScreen(
                                     AetherSurfaceCard(
                                         modifier = Modifier
                                             .padding(start = indent)
-                                            .clickable(enabled = canConnect) {
-                                                onJoinVoiceChannel(selectedSpace, item.category, ch)
-                                            },
+                                            .combinedClickable(
+                                                enabled = canConnect,
+                                                onClick = { onJoinVoiceChannel(selectedSpace, item.category, ch) },
+                                                onLongClick = { if (isSpaceAdmin) editingChannel = ch },
+                                            ),
                                     ) {
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
@@ -437,7 +523,10 @@ fun SpacesScreen(
                                     AetherSurfaceCard(
                                         modifier = Modifier
                                             .padding(start = indent)
-                                            .clickable { onOpenTextChannel(ch) },
+                                            .combinedClickable(
+                                                onClick = { onOpenTextChannel(ch) },
+                                                onLongClick = { if (isSpaceAdmin) editingChannel = ch },
+                                            ),
                                     ) {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Icon(
@@ -531,8 +620,11 @@ private fun UserProfileDialog(
     instanceUrl: String,
     member: MemberWithUser,
     isMe: Boolean,
+    canModerate: Boolean,
     sendDmLabel: String,
     onSendDm: () -> Unit,
+    onKick: () -> Unit,
+    onBan: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val colors = AetherTheme.colors
@@ -578,6 +670,14 @@ private fun UserProfileDialog(
                 if (!isMe) {
                     Spacer(Modifier.height(4.dp))
                     AetherPrimaryButton(text = sendDmLabel, onClick = onSendDm)
+                }
+                if (canModerate) {
+                    OutlinedButton(onClick = onKick, modifier = Modifier.fillMaxWidth()) {
+                        Text("Expulsar do Espaço", color = colors.accentAmber)
+                    }
+                    OutlinedButton(onClick = onBan, modifier = Modifier.fillMaxWidth()) {
+                        Text("Banir do Espaço", color = colors.accentPeach)
+                    }
                 }
             }
         },
@@ -769,12 +869,15 @@ private fun SpaceAdminDialog(
     val colors = AetherTheme.colors
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
-    var tab by remember { mutableIntStateOf(0) } // 0 = Geral, 1 = Canais/Convite, 2 = Opus
+    var tab by remember { mutableIntStateOf(0) } // 0 = Geral, 1 = Canais, 2 = Cargos/Bans, 3 = Opus
     var name by remember { mutableStateOf(space.name) }
     var description by remember { mutableStateOf(space.description.orEmpty()) }
     var newChannelName by remember { mutableStateOf("") }
     var newChannelType by remember { mutableStateOf("text") }
     var newCategoryName by remember { mutableStateOf("") }
+    var newRoleName by remember { mutableStateOf("") }
+    var newRoleColor by remember { mutableStateOf("#7C6CF6") }
+    var bans by remember { mutableStateOf<List<SpaceBanItem>>(emptyList()) }
     var generatedInvite by remember { mutableStateOf<String?>(null) }
     var actionFeedback by remember { mutableStateOf<String?>(null) }
     var bitrate by remember { mutableStateOf((space.audioBitrateKbps ?: 64).toFloat()) }
@@ -782,16 +885,24 @@ private fun SpaceAdminDialog(
     var allowMusic by remember { mutableStateOf(space.allowMusicMode ?: true) }
     var allowStereo by remember { mutableStateOf(space.allowStereoAudio ?: true) }
 
+    LaunchedEffect(tab) {
+        if (tab == 2) {
+            runCatching { restClient.getBans(instanceUrl, jwtToken, space.id) }
+                .onSuccess { bans = it }
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = colors.bgChannel,
         title = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("$title · ${space.name}", color = colors.textPrimary, style = MaterialTheme.typography.titleMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(selected = tab == 0, onClick = { tab = 0 }, label = { Text("Geral") })
-                    FilterChip(selected = tab == 1, onClick = { tab = 1 }, label = { Text("Canais") })
-                    FilterChip(selected = tab == 2, onClick = { tab = 2 }, label = { Text("Opus") })
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    item { FilterChip(selected = tab == 0, onClick = { tab = 0 }, label = { Text("Geral") }) }
+                    item { FilterChip(selected = tab == 1, onClick = { tab = 1 }, label = { Text("Canais") }) }
+                    item { FilterChip(selected = tab == 2, onClick = { tab = 2 }, label = { Text("Cargos/Bans") }) }
+                    item { FilterChip(selected = tab == 3, onClick = { tab = 3 }, label = { Text("Opus") }) }
                 }
             }
         },
@@ -896,6 +1007,61 @@ private fun SpaceAdminDialog(
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Text("Criar categoria", color = colors.accentPrimary)
+                        }
+                    }
+
+                    2 -> {
+                        OutlinedTextField(
+                            value = newRoleName,
+                            onValueChange = { newRoleName = it },
+                            label = { Text("Novo cargo") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            value = newRoleColor,
+                            onValueChange = { newRoleColor = it },
+                            label = { Text("Cor (#RRGGBB)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        AetherPrimaryButton(
+                            text = "Criar cargo",
+                            enabled = newRoleName.isNotBlank(),
+                            onClick = {
+                                scope.launch {
+                                    runCatching {
+                                        restClient.createRole(instanceUrl, jwtToken, space.id, newRoleName.trim(), newRoleColor.trim())
+                                        wsClient.refreshSpaceDetail(space.id)
+                                    }.onSuccess {
+                                        newRoleName = ""
+                                        actionFeedback = "Cargo criado!"
+                                    }.onFailure { actionFeedback = it.message }
+                                }
+                            },
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text("Banidos (${bans.size})", color = colors.accentPeach, style = MaterialTheme.typography.labelLarge)
+                        bans.forEach { ban ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text(ban.label, color = colors.textPrimary, style = MaterialTheme.typography.bodySmall)
+                                TextButton(
+                                    onClick = {
+                                        scope.launch {
+                                            runCatching {
+                                                restClient.unbanMember(instanceUrl, jwtToken, space.id, ban.userId)
+                                                bans = bans.filterNot { it.userId == ban.userId }
+                                            }
+                                        }
+                                    },
+                                ) {
+                                    Text("Desbanir", color = colors.accentMint)
+                                }
+                            }
                         }
                     }
 

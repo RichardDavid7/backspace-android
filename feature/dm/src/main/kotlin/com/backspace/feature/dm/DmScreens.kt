@@ -16,14 +16,19 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -72,6 +77,7 @@ fun DmListScreen(
     var requests by remember { mutableStateOf<List<FriendRequestItem>>(emptyList()) }
     var addUsername by remember { mutableStateOf("") }
     var socialFeedback by remember { mutableStateOf<String?>(null) }
+    var showCreateGroupDialog by remember { mutableStateOf(false) }
 
     fun reloadSocial() {
         scope.launch {
@@ -84,13 +90,95 @@ fun DmListScreen(
         if (selectedTab == 1) reloadSocial()
     }
 
+    if (showCreateGroupDialog) {
+        val selectedIds = remember { mutableStateOf(setOf<String>()) }
+        AlertDialog(
+            onDismissRequest = { showCreateGroupDialog = false },
+            containerColor = colors.bgChannel,
+            title = { Text("Criar Grupo DM", color = colors.textPrimary) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (friends.isEmpty()) {
+                        Text("Adicione amigos primeiro para criar um grupo.", color = colors.textSecondary)
+                    } else {
+                        friends.forEach { fr ->
+                            val checked = selectedIds.value.contains(fr.targetUserId)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        selectedIds.value = if (checked) {
+                                            selectedIds.value - fr.targetUserId
+                                        } else {
+                                            selectedIds.value + fr.targetUserId
+                                        }
+                                    },
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Checkbox(
+                                    checked = checked,
+                                    onCheckedChange = { isChecked ->
+                                        selectedIds.value = if (isChecked) {
+                                            selectedIds.value + fr.targetUserId
+                                        } else {
+                                            selectedIds.value - fr.targetUserId
+                                        }
+                                    },
+                                )
+                                Text(fr.label, color = colors.textPrimary)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = selectedIds.value.size >= 2,
+                    onClick = {
+                        val ids = selectedIds.value.toList()
+                        showCreateGroupDialog = false
+                        scope.launch {
+                            runCatching {
+                                val dm = restClient.createGroupDm(instanceUrl, jwtToken, ids)
+                                wsClient.addOrUpdateDmChannel(dm)
+                                dm
+                            }.onSuccess { onOpenDm(it) }
+                                .onFailure { socialFeedback = it.message }
+                        }
+                    },
+                ) {
+                    Text("Criar", color = colors.accentPrimary)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateGroupDialog = false }) {
+                    Text("Cancelar", color = colors.textSecondary)
+                }
+            },
+        )
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(colors.bgBase)
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
-        Text(text = title, style = MaterialTheme.typography.titleLarge, color = colors.textPrimary)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(text = title, style = MaterialTheme.typography.titleLarge, color = colors.textPrimary)
+            IconButton(
+                onClick = {
+                    if (friends.isEmpty()) reloadSocial()
+                    showCreateGroupDialog = true
+                },
+            ) {
+                Icon(Icons.Default.GroupAdd, contentDescription = "Create Group DM", tint = colors.accentPrimary)
+            }
+        }
 
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -271,22 +359,38 @@ fun DmListScreen(
                             }
                         },
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            AetherAvatar(
-                                imageUrl = friend.user?.avatarUrl(instanceUrl),
-                                fallbackLabel = friend.label,
-                                size = 38.dp,
-                                status = friend.user?.status ?: "offline",
-                            )
-                            Spacer(Modifier.width(10.dp))
-                            Column {
-                                Text(friend.label, color = colors.textPrimary, style = MaterialTheme.typography.titleSmall)
-                                Text(
-                                    text = friend.user?.customStatus?.takeIf { it.isNotBlank() }
-                                        ?: "@${friend.user?.username.orEmpty()}",
-                                    color = colors.textSecondary,
-                                    style = MaterialTheme.typography.bodySmall,
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                AetherAvatar(
+                                    imageUrl = friend.user?.avatarUrl(instanceUrl),
+                                    fallbackLabel = friend.label,
+                                    size = 38.dp,
+                                    status = friend.user?.status ?: "offline",
                                 )
+                                Spacer(Modifier.width(10.dp))
+                                Column {
+                                    Text(friend.label, color = colors.textPrimary, style = MaterialTheme.typography.titleSmall)
+                                    Text(
+                                        text = friend.user?.customStatus?.takeIf { it.isNotBlank() }
+                                            ?: "@${friend.user?.username.orEmpty()}",
+                                        color = colors.textSecondary,
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                            }
+                            IconButton(
+                                onClick = {
+                                    scope.launch {
+                                        runCatching { restClient.removeFriend(instanceUrl, jwtToken, friend.targetUserId) }
+                                        reloadSocial()
+                                    }
+                                },
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = "Remove friend", tint = colors.accentPeach)
                             }
                         }
                     }

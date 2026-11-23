@@ -48,11 +48,14 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -76,7 +79,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -132,9 +137,11 @@ fun ChatChannelScreen(
 ) {
     val colors = AetherTheme.colors
     val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     val snapshot by wsClient.snapshot.collectAsStateWithLifecycle()
-    val messages = snapshot.messagesByChannel[channelId].orEmpty()
+    val allMessages = snapshot.messagesByChannel[channelId].orEmpty()
+    val typingUsers = snapshot.typingByChannel[channelId].orEmpty()
     val queuedForChannel = remember(snapshot.queuedMessages, channelId) {
         snapshot.queuedMessages.filter { it.channelId == channelId }
     }
@@ -156,12 +163,27 @@ fun ChatChannelScreen(
 
     var draft by remember { mutableStateOf("") }
     var replyingTo by remember { mutableStateOf<Message?>(null) }
+    var editingMessage by remember { mutableStateOf<Message?>(null) }
     var selectedMessageForActions by remember { mutableStateOf<Message?>(null) }
     var fullscreenImageUrl by remember { mutableStateOf<String?>(null) }
     var showCallConfirmDialog by remember { mutableStateOf(false) }
     var showMediaPicker by remember { mutableStateOf(false) }
+    var showSearchBar by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var lastTypingSentMs by remember { mutableStateOf(0L) }
     var errorText by remember { mutableStateOf<String?>(null) }
     val pendingAttachments = remember { mutableStateListOf<PendingAttachmentPayload>() }
+
+    val messages = remember(allMessages, searchQuery, showSearchBar) {
+        if (!showSearchBar || searchQuery.isBlank()) {
+            allMessages
+        } else {
+            val q = searchQuery.trim().lowercase()
+            allMessages.filter {
+                it.safeContent.lowercase().contains(q) || it.authorLabel.lowercase().contains(q)
+            }
+        }
+    }
 
     fun attachUris(uris: List<Uri>) {
         if (uris.isEmpty()) return
@@ -371,6 +393,7 @@ fun ChatChannelScreen(
                             .fillMaxWidth()
                             .clickable {
                                 replyingTo = targetMsg
+                                editingMessage = null
                                 selectedMessageForActions = null
                             }
                             .padding(vertical = 8.dp),
@@ -381,7 +404,41 @@ fun ChatChannelScreen(
                         Text(replyActionLabel, color = colors.textPrimary)
                     }
 
+                    if (targetMsg.safeContent.isNotBlank()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    clipboard.setText(AnnotatedString(targetMsg.safeContent))
+                                    selectedMessageForActions = null
+                                }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = null, tint = colors.textSecondary)
+                            Spacer(Modifier.width(10.dp))
+                            Text("Copiar texto", color = colors.textPrimary)
+                        }
+                    }
+
                     if (targetMsg.userId == myUserId) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    editingMessage = targetMsg
+                                    replyingTo = null
+                                    draft = targetMsg.safeContent
+                                    selectedMessageForActions = null
+                                }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Default.Edit, contentDescription = null, tint = colors.accentAmber)
+                            Spacer(Modifier.width(10.dp))
+                            Text("Editar", color = colors.textPrimary)
+                        }
+
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -446,15 +503,41 @@ fun ChatChannelScreen(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (isDm && onStartCall != null) {
-                IconButton(onClick = { showCallConfirmDialog = true }) {
+            Row {
+                IconButton(
+                    onClick = {
+                        showSearchBar = !showSearchBar
+                        if (!showSearchBar) searchQuery = ""
+                    },
+                ) {
                     Icon(
-                        imageVector = Icons.Default.Call,
-                        contentDescription = "Call",
-                        tint = colors.accentMint,
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search",
+                        tint = if (showSearchBar) colors.accentPrimary else colors.textSecondary,
                     )
                 }
+                if (isDm && onStartCall != null) {
+                    IconButton(onClick = { showCallConfirmDialog = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Call,
+                            contentDescription = "Call",
+                            tint = colors.accentMint,
+                        )
+                    }
+                }
             }
+        }
+
+        if (showSearchBar) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("Buscar mensagens...") },
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 6.dp),
+            )
         }
 
         if (!errorText.isNullOrBlank()) {
@@ -484,6 +567,24 @@ fun ChatChannelScreen(
                     .fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                if (!isDm && allMessages.size >= 50 && !showSearchBar) {
+                    item(key = "load_older") {
+                        TextButton(
+                            onClick = {
+                                val firstId = allMessages.firstOrNull()?.id ?: return@TextButton
+                                scope.launch {
+                                    runCatching {
+                                        val older = restClient.getChannelMessages(instanceUrl, jwtToken, channelId, before = firstId)
+                                        wsClient.mergeChannelHistory(channelId, older)
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("Carregar mensagens anteriores", color = colors.accentSky)
+                        }
+                    }
+                }
                 items(messages, key = { it.id }) { msg ->
                     val isMine = msg.userId == myUserId
                     val authorColor = roleColorByUserId[msg.userId]
@@ -549,7 +650,7 @@ fun ChatChannelScreen(
                         if (msg.safeContent.isNotBlank()) {
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                text = msg.safeContent,
+                                text = if (msg.editedAt != null) "${msg.safeContent} (editado)" else msg.safeContent,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = colors.textPrimary,
                             )
@@ -705,6 +806,48 @@ fun ChatChannelScreen(
             }
         }
 
+        // Indicador de quem está digitando em tempo real
+        if (typingUsers.isNotEmpty()) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "${typingUsers.joinToString(", ")} digitando...",
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.accentSky,
+            )
+        }
+
+        // Barra "Editando mensagem..."
+        editingMessage?.let { editing ->
+            Spacer(Modifier.height(6.dp))
+            Surface(
+                color = colors.bgChannel,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = "Editando mensagem",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = colors.accentAmber,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(
+                        onClick = {
+                            editingMessage = null
+                            draft = ""
+                        },
+                        modifier = Modifier.size(24.dp),
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Cancel edit", tint = colors.textSecondary)
+                    }
+                }
+            }
+        }
+
         // Barra "Respondendo a..."
         replyingTo?.let { reply ->
             Spacer(Modifier.height(6.dp))
@@ -773,7 +916,14 @@ fun ChatChannelScreen(
             }
             OutlinedTextField(
                 value = draft,
-                onValueChange = { draft = it },
+                onValueChange = { nextText ->
+                    draft = nextText
+                    val now = System.currentTimeMillis()
+                    if (nextText.isNotBlank() && now - lastTypingSentMs > 3_000L) {
+                        lastTypingSentMs = now
+                        wsClient.sendTypingStart(channelId)
+                    }
+                },
                 placeholder = { Text(messagePlaceholder) },
                 modifier = Modifier
                     .weight(1f)
@@ -785,6 +935,24 @@ fun ChatChannelScreen(
             IconButton(
                 enabled = canSend,
                 onClick = {
+                    val editing = editingMessage
+                    if (editing != null) {
+                        val updatedText = draft.trim()
+                        if (updatedText.isBlank()) return@IconButton
+                        editingMessage = null
+                        draft = ""
+                        scope.launch {
+                            runCatching {
+                                val updatedMsg = if (isDm) {
+                                    restClient.editDmMessage(instanceUrl, jwtToken, editing.id, updatedText).toChannelMessage()
+                                } else {
+                                    restClient.editMessage(instanceUrl, jwtToken, editing.id, updatedText)
+                                }
+                                wsClient.updateLocalMessage(channelId, updatedMsg)
+                            }.onFailure { err -> errorText = err.message }
+                        }
+                        return@IconButton
+                    }
                     val contentToSend = draft.trim().ifBlank { null }
                     val attsToSend = pendingAttachments.toList()
                     val replyId = replyingTo?.id

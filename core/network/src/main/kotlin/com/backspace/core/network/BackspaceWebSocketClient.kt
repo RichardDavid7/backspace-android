@@ -61,6 +61,7 @@ data class RealtimeSnapshot(
     val voiceUserStates: Map<String, VoiceUserState> = emptyMap(),
     val spaceVoiceStates: Map<String, SpaceVoiceState> = emptyMap(),
     val messagesByChannel: Map<String, List<Message>> = emptyMap(),
+    val typingByChannel: Map<String, Set<String>> = emptyMap(),
     val queuedMessages: List<QueuedOutgoingMessage> = emptyList(),
     val lastError: String? = null,
 )
@@ -251,6 +252,26 @@ class BackspaceWebSocketClient(
                 put("channelId", channelId)
             },
         )
+    }
+
+    fun sendTypingStart(channelId: String) {
+        sendJson(
+            buildJsonObject {
+                put("type", "typing_start")
+                put("channelId", channelId)
+            },
+        )
+    }
+
+    fun updateLocalMessage(channelId: String, updated: Message) {
+        _snapshot.update { current ->
+            val list = current.messagesByChannel[channelId] ?: return@update current
+            current.copy(
+                messagesByChannel = current.messagesByChannel + (
+                    channelId to list.map { if (it.id == updated.id) updated else it }
+                ),
+            )
+        }
     }
 
     fun sendReactionAdd(messageId: String, emoji: String) {
@@ -489,6 +510,7 @@ class BackspaceWebSocketClient(
             "message_delete", "message_deleted" -> handleMessageDelete(obj)
             "dm_message_created" -> handleDmMessageCreated(obj)
             "dm_message_deleted" -> handleDmMessageDeleted(obj)
+            "typing_start" -> handleTypingStart(obj)
             "reaction_added" -> handleReactionAdded(obj)
             "reaction_removed" -> handleReactionRemoved(obj)
             "user_updated" -> handleUserUpdated(obj)
@@ -783,6 +805,28 @@ class BackspaceWebSocketClient(
         val dmId = obj["dmChannelId"]?.jsonPrimitive?.contentOrNull ?: return
         val msgId = obj["messageId"]?.jsonPrimitive?.contentOrNull ?: return
         removeLocalMessage(dmId, msgId)
+    }
+
+    private fun handleTypingStart(obj: JsonObject) {
+        val channelId = obj["channelId"]?.jsonPrimitive?.contentOrNull ?: return
+        val username = obj["username"]?.jsonPrimitive?.contentOrNull
+            ?: obj["userId"]?.jsonPrimitive?.contentOrNull
+            ?: return
+        val myId = _snapshot.value.currentUser?.id
+        val myName = _snapshot.value.currentUser?.username
+        if (username == myId || username == myName) return
+
+        _snapshot.update { cur ->
+            val currentSet = cur.typingByChannel[channelId].orEmpty()
+            cur.copy(typingByChannel = cur.typingByChannel + (channelId to (currentSet + username)))
+        }
+        scope.launch {
+            delay(5_000L)
+            _snapshot.update { cur ->
+                val currentSet = cur.typingByChannel[channelId].orEmpty() - username
+                cur.copy(typingByChannel = cur.typingByChannel + (channelId to currentSet))
+            }
+        }
     }
 
     private fun handleUserUpdated(obj: JsonObject) {

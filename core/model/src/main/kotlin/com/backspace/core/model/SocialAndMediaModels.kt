@@ -71,6 +71,15 @@ data class FriendRequestItem(
     val label: String get() = user?.label ?: fromUserId.ifBlank { toUserId }
 }
 
+@Serializable
+data class SpaceBanItem(
+    val userId: String = "",
+    val reason: String? = null,
+    val user: User? = null,
+) {
+    val label: String get() = user?.label ?: userId
+}
+
 object InviteCodeExtractor {
     fun extract(raw: String): String {
         val trimmed = raw.trim().trimEnd('/')
