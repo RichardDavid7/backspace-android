@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.HeadsetOff
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,6 +50,7 @@ fun VoiceRoomScreen(
     stereoLabel: String,
     autoBitrateLabel: String,
     idleSuspendLabel: String,
+    onOpenSoundboard: (() -> Unit)? = null,
     onBack: () -> Unit,
 ) {
     val colors = AetherTheme.colors
@@ -111,6 +113,15 @@ fun VoiceRoomScreen(
                         contentDescription = "Deafen",
                         tint = if (state.isDeafened) colors.accentPeach else colors.textPrimary,
                     )
+                }
+                if (onOpenSoundboard != null) {
+                    IconButton(onClick = onOpenSoundboard) {
+                        Icon(
+                            imageVector = Icons.Default.MusicNote,
+                            contentDescription = "Soundboard",
+                            tint = colors.accentPrimary,
+                        )
+                    }
                 }
                 IconButton(
                     onClick = {

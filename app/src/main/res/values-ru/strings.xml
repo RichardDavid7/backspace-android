@@ -6,6 +6,7 @@
     <string name="auth_password">Пароль</string>
     <string name="auth_connect">Подключиться</string>
     <string name="spaces_title">Пространства</string>
+    <string name="spaces_text_channels">Текстовые каналы</string>
     <string name="spaces_voice_channels">Голосовые каналы</string>
     <string name="spaces_empty">Пока нет доступных пространств.</string>
     <string name="voice_connected_banner">Голос подключён</string>
@@ -16,4 +17,20 @@
     <string name="voice_stereo">Стерео звук</string>
     <string name="voice_bitrate_auto">Авто битрейт</string>
     <string name="voice_idle_suspend">Приостанавливать неактивный звук</string>
+    <string name="chat_message_placeholder">Напишите сообщение...</string>
+    <string name="chat_empty">Сообщений пока нет.</string>
+    <string name="soundboard_title">Саундборд</string>
+    <string name="soundboard_search">Поиск звуков...</string>
+    <string name="soundboard_volume">Громкость саундборда</string>
+    <string name="soundboard_empty">Нет доступных звуков.</string>
+    <string name="status_picker_title">Статус</string>
+    <string name="status_online">В сети</string>
+    <string name="status_idle">Не активен</string>
+    <string name="status_dnd">Не беспокоить</string>
+    <string name="status_custom_placeholder">Пользовательский статус...</string>
+    <string name="status_revert_timer">Автосброс через</string>
+    <string name="common_save">Сохранить</string>
+    <string name="common_cancel">Отмена</string>
+    <string name="updater_repo_slug" translatable="false"></string>
+    <string name="updater_up_to_date">У вас установлена последняя версия.</string>
 </resources>

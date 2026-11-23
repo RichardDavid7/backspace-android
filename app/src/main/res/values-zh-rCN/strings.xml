@@ -6,6 +6,7 @@
     <string name="auth_password">密码</string>
     <string name="auth_connect">连接</string>
     <string name="spaces_title">空间</string>
+    <string name="spaces_text_channels">文字频道</string>
     <string name="spaces_voice_channels">语音频道</string>
     <string name="spaces_empty">暂无可用空间。</string>
     <string name="voice_connected_banner">语音已连接</string>
@@ -16,4 +17,20 @@
     <string name="voice_stereo">立体声</string>
     <string name="voice_bitrate_auto">自动比特率</string>
     <string name="voice_idle_suspend">空闲时暂停音频</string>
+    <string name="chat_message_placeholder">输入消息...</string>
+    <string name="chat_empty">暂无消息。</string>
+    <string name="soundboard_title">音效板</string>
+    <string name="soundboard_search">搜索音效...</string>
+    <string name="soundboard_volume">音效板音量</string>
+    <string name="soundboard_empty">暂无可用音效。</string>
+    <string name="status_picker_title">状态</string>
+    <string name="status_online">在线</string>
+    <string name="status_idle">离开</string>
+    <string name="status_dnd">请勿打扰</string>
+    <string name="status_custom_placeholder">自定义状态...</string>
+    <string name="status_revert_timer">自动恢复时间</string>
+    <string name="common_save">保存</string>
+    <string name="common_cancel">取消</string>
+    <string name="updater_repo_slug" translatable="false"></string>
+    <string name="updater_up_to_date">当前已是最新版本。</string>
 </resources>

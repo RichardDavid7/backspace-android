@@ -1,8 +1,11 @@
 package com.backspace.android
 
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -12,16 +15,23 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.backspace.core.designsystem.BackspaceAetherTheme
 import com.backspace.core.network.StoredSession
 import com.backspace.feature.auth.AuthScreen
+import com.backspace.feature.chat.ChatChannelScreen
+import com.backspace.feature.soundboard.SoundboardScreen
 import com.backspace.feature.spaces.SpacesScreen
 import com.backspace.feature.voice.VoiceRoomScreen
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -38,6 +48,8 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun BackspaceRootApp(container: AppContainer) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val navController = rememberNavController()
     var session by remember { mutableStateOf(container.sessionStorage.load()) }
 
@@ -66,6 +78,7 @@ private fun BackspaceRootApp(container: AppContainer) {
     }
 
     val startDestination = if (session != null) "spaces" else "auth"
+    val updateUpToDateText = stringResource(R.string.updater_up_to_date)
 
     NavHost(navController = navController, startDestination = startDestination) {
         composable("auth") {
@@ -92,9 +105,22 @@ private fun BackspaceRootApp(container: AppContainer) {
                 wsClient = container.wsClient,
                 voiceEngine = container.voiceEngine,
                 spacesTitle = stringResource(R.string.spaces_title),
+                textChannelsHeader = stringResource(R.string.spaces_text_channels),
                 voiceChannelsHeader = stringResource(R.string.spaces_voice_channels),
                 noSpacesText = stringResource(R.string.spaces_empty),
                 activeVoiceBannerPrefix = stringResource(R.string.voice_connected_banner),
+                statusPickerTitle = stringResource(R.string.status_picker_title),
+                statusOnlineLabel = stringResource(R.string.status_online),
+                statusIdleLabel = stringResource(R.string.status_idle),
+                statusDndLabel = stringResource(R.string.status_dnd),
+                customStatusPlaceholder = stringResource(R.string.status_custom_placeholder),
+                revertTimerLabel = stringResource(R.string.status_revert_timer),
+                saveLabel = stringResource(R.string.common_save),
+                cancelLabel = stringResource(R.string.common_cancel),
+                onOpenTextChannel = { channel ->
+                    val encodedName = Uri.encode(channel.name)
+                    navController.navigate("chat/${channel.id}/$encodedName")
+                },
                 onJoinVoiceChannel = { space, category, channel ->
                     val active = session ?: return@SpacesScreen
                     container.voiceEngine.joinChannel(
@@ -107,6 +133,20 @@ private fun BackspaceRootApp(container: AppContainer) {
                     navController.navigate("voice")
                 },
                 onOpenActiveVoice = { navController.navigate("voice") },
+                onCheckUpdates = {
+                    scope.launch {
+                        val repoSlug = context.getString(R.string.updater_repo_slug)
+                        val result = container.releaseUpdater.checkLatestRelease(
+                            repoSlug = repoSlug,
+                            currentVersion = "0.2.0-alpha",
+                        )
+                        if (result != null && result.updateAvailable && result.downloadUrl.isNotBlank()) {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(result.downloadUrl)))
+                        } else {
+                            Toast.makeText(context, updateUpToDateText, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                },
                 onLogout = {
                     container.voiceEngine.leaveChannel()
                     container.wsClient.disconnect()
@@ -119,7 +159,31 @@ private fun BackspaceRootApp(container: AppContainer) {
             )
         }
 
+        composable(
+            route = "chat/{channelId}/{channelName}",
+            arguments = listOf(
+                navArgument("channelId") { type = NavType.StringType },
+                navArgument("channelName") { type = NavType.StringType },
+            ),
+        ) { backStackEntry ->
+            val active = session ?: return@composable
+            val channelId = backStackEntry.arguments?.getString("channelId").orEmpty()
+            val channelName = Uri.decode(backStackEntry.arguments?.getString("channelName").orEmpty())
+            ChatChannelScreen(
+                instanceUrl = active.instanceUrl,
+                jwtToken = active.token,
+                channelId = channelId,
+                channelName = channelName,
+                restClient = container.restClient,
+                wsClient = container.wsClient,
+                messagePlaceholder = stringResource(R.string.chat_message_placeholder),
+                emptyChatText = stringResource(R.string.chat_empty),
+                onBack = { navController.popBackStack() },
+            )
+        }
+
         composable("voice") {
+            val activeSpaceId = container.voiceEngine.state.value.spaceId
             VoiceRoomScreen(
                 voiceEngine = container.voiceEngine,
                 opusTitle = stringResource(R.string.voice_opus_title),
@@ -129,6 +193,29 @@ private fun BackspaceRootApp(container: AppContainer) {
                 stereoLabel = stringResource(R.string.voice_stereo),
                 autoBitrateLabel = stringResource(R.string.voice_bitrate_auto),
                 idleSuspendLabel = stringResource(R.string.voice_idle_suspend),
+                onOpenSoundboard = activeSpaceId?.let { spaceId ->
+                    { navController.navigate("soundboard/$spaceId") }
+                },
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(
+            route = "soundboard/{spaceId}",
+            arguments = listOf(navArgument("spaceId") { type = NavType.StringType }),
+        ) { backStackEntry ->
+            val active = session ?: return@composable
+            val spaceId = backStackEntry.arguments?.getString("spaceId").orEmpty()
+            SoundboardScreen(
+                instanceUrl = active.instanceUrl,
+                jwtToken = active.token,
+                spaceId = spaceId,
+                restClient = container.restClient,
+                voiceEngine = container.voiceEngine,
+                title = stringResource(R.string.soundboard_title),
+                searchPlaceholder = stringResource(R.string.soundboard_search),
+                volumeLabel = stringResource(R.string.soundboard_volume),
+                emptyText = stringResource(R.string.soundboard_empty),
                 onBack = { navController.popBackStack() },
             )
         }

@@ -12,8 +12,8 @@ android {
         applicationId = "com.backspace.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0-alpha"
+        versionCode = 2
+        versionName = "0.2.0-alpha"
     }
 
     buildTypes {
@@ -45,9 +45,12 @@ dependencies {
     implementation(project(":core:network"))
     implementation(project(":core:voice"))
     implementation(project(":core:designsystem"))
+    implementation(project(":core:updater"))
     implementation(project(":feature:auth"))
     implementation(project(":feature:spaces"))
     implementation(project(":feature:voice"))
+    implementation(project(":feature:chat"))
+    implementation(project(":feature:soundboard"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

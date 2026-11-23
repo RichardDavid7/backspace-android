@@ -6,6 +6,7 @@
     <string name="auth_password">Passwort</string>
     <string name="auth_connect">Verbinden</string>
     <string name="spaces_title">Spaces</string>
+    <string name="spaces_text_channels">Textkanäle</string>
     <string name="spaces_voice_channels">Sprachkanäle</string>
     <string name="spaces_empty">Noch keine Spaces verfügbar.</string>
     <string name="voice_connected_banner">Sprachverbindung aktiv</string>
@@ -16,4 +17,20 @@
     <string name="voice_stereo">Stereo-Audio</string>
     <string name="voice_bitrate_auto">Automatische Bitrate</string>
     <string name="voice_idle_suspend">Inaktives Audio pausieren</string>
+    <string name="chat_message_placeholder">Nachricht schreiben...</string>
+    <string name="chat_empty">Noch keine Nachrichten.</string>
+    <string name="soundboard_title">Soundboard</string>
+    <string name="soundboard_search">Sounds suchen...</string>
+    <string name="soundboard_volume">Soundboard-Lautstärke</string>
+    <string name="soundboard_empty">Keine Sounds verfügbar.</string>
+    <string name="status_picker_title">Status</string>
+    <string name="status_online">Online</string>
+    <string name="status_idle">Abwesend</string>
+    <string name="status_dnd">Bitte nicht stören</string>
+    <string name="status_custom_placeholder">Eigener Status...</string>
+    <string name="status_revert_timer">Automatisch zurücksetzen nach</string>
+    <string name="common_save">Speichern</string>
+    <string name="common_cancel">Abbrechen</string>
+    <string name="updater_repo_slug" translatable="false"></string>
+    <string name="updater_up_to_date">Du nutzt bereits die neueste Version.</string>
 </resources>

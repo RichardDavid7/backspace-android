@@ -3,7 +3,7 @@ import path from 'node:path';
 
 const resDir = path.resolve('app/src/main/res');
 const locales = ['values', 'values-pt-rBR', 'values-de', 'values-ru', 'values-zh-rCN'];
-const keyRegex = /<string\s+name="([^"]+)">/g;
+const keyRegex = /<string\s+name="([^"]+)"[^>]*>/g;
 
 function extractKeys(filePath) {
   const xml = fs.readFileSync(filePath, 'utf8');

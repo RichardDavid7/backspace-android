@@ -8,6 +8,9 @@ import com.backspace.core.model.AudioPolicyResolver
 import com.backspace.core.model.Channel
 import com.backspace.core.model.ChannelCategory
 import com.backspace.core.model.EffectiveAudioConfig
+import com.backspace.core.model.SoundboardPlayPayload
+import com.backspace.core.model.SoundboardSound
+import com.backspace.core.model.SoundboardUrlValidator
 import com.backspace.core.model.Space
 import com.backspace.core.model.UserAudioPreferences
 import com.backspace.core.model.VoiceTelemetry
@@ -33,6 +36,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -69,6 +73,8 @@ data class VoiceSessionState(
     ),
     val participants: List<VoiceParticipantUi> = emptyList(),
     val telemetry: VoiceTelemetry = VoiceTelemetry(),
+    val soundboardVolume: Float = 0.8f,
+    val lastSoundboardEvent: String? = null,
     val errorMessage: String? = null,
 )
 
@@ -83,6 +89,8 @@ class BackspaceVoiceEngine(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val audioRouter = VoiceAudioRouter(appContext)
+    private val soundboardPlayer = SoundboardAudioPlayer()
+    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
     private val _state = MutableStateFlow(VoiceSessionState())
     val state: StateFlow<VoiceSessionState> = _state.asStateFlow()
@@ -231,6 +239,48 @@ class BackspaceVoiceEngine(
         _state.update { it.copy(outputRoute = route) }
     }
 
+    fun setSoundboardVolume(volume: Float) {
+        _state.update { it.copy(soundboardVolume = volume.coerceIn(0f, 1f)) }
+    }
+
+    fun playSoundboardSound(sound: SoundboardSound) {
+        scope.launch {
+            val lkRoom = room ?: return@launch
+            val baseUrl = currentInstanceUrl ?: return@launch
+            val fileUrl = sound.resolvedFileUrl
+            if (!SoundboardUrlValidator.isSafeFileUrl(fileUrl)) return@launch
+
+            val myUserId = wsClient.snapshot.value.currentUser?.id ?: "me"
+            val payload = SoundboardPlayPayload(
+                soundId = sound.id,
+                fileUrl = fileUrl,
+                name = sound.name,
+                emoji = sound.emoji,
+                senderUserId = myUserId,
+                durationMs = sound.durationMs,
+                volumeScale = sound.volume,
+            )
+
+            // Envia via LiveKit DataChannel para todos na sala
+            runCatching {
+                val bytes = json.encodeToString(SoundboardPlayPayload.serializer(), payload)
+                    .toByteArray(Charsets.UTF_8)
+                lkRoom.localParticipant.publishData(
+                    data = bytes,
+                    reliability = DataPublishReliability.RELIABLE,
+                )
+            }
+
+            // Toca localmente se não estiver ensurdecido
+            if (!_state.value.isDeafened) {
+                val maxConcurrent = wsClient.snapshot.value.streamingLimits.maxConcurrentSoundboardSounds
+                val effectiveVol = (_state.value.soundboardVolume * sound.volume.toFloat()).coerceIn(0f, 1f)
+                soundboardPlayer.play("$baseUrl$fileUrl", effectiveVol, maxConcurrent)
+                _state.update { it.copy(lastSoundboardEvent = "${sound.emoji} ${sound.name}") }
+            }
+        }
+    }
+
     fun updateUserAudioPreferences(transform: (UserAudioPreferences) -> UserAudioPreferences) {
         scope.launch {
             val updatedPrefs = transform(_state.value.userPrefs)
@@ -338,6 +388,7 @@ class BackspaceVoiceEngine(
                         refreshParticipants(lkRoom)
                     }
                     is RoomEvent.ActiveSpeakersChanged -> refreshParticipants(lkRoom)
+                    is RoomEvent.DataReceived -> handleDataReceived(event)
                     is RoomEvent.Reconnecting -> {
                         _state.update { it.copy(status = VoiceConnectionStatus.RECONNECTING) }
                     }
@@ -478,7 +529,27 @@ class BackspaceVoiceEngine(
         }
     }
 
+    private fun handleDataReceived(event: RoomEvent.DataReceived) {
+        val raw = runCatching { event.data.toString(Charsets.UTF_8) }.getOrNull() ?: return
+        if (!raw.contains("\"soundboard_play\"")) return
+        if (_state.value.isDeafened) return
+        if (event.participant?.attributes?.get("sb") == "0") return
+
+        val payload = runCatching {
+            json.decodeFromString(SoundboardPlayPayload.serializer(), raw)
+        }.getOrNull() ?: return
+
+        val baseUrl = currentInstanceUrl ?: return
+        if (!SoundboardUrlValidator.isSafeFileUrl(payload.fileUrl)) return
+
+        val maxConcurrent = wsClient.snapshot.value.streamingLimits.maxConcurrentSoundboardSounds
+        val effectiveVol = (_state.value.soundboardVolume * payload.volumeScale.toFloat()).coerceIn(0f, 1f)
+        soundboardPlayer.play("$baseUrl${payload.fileUrl}", effectiveVol, maxConcurrent)
+        _state.update { it.copy(lastSoundboardEvent = "${payload.emoji} ${payload.name}") }
+    }
+
     private fun cleanupRoomOnly() {
+        soundboardPlayer.stopAll()
         roomEventsJob?.cancel()
         policyObserverJob?.cancel()
         idleSuspendJob?.cancel()

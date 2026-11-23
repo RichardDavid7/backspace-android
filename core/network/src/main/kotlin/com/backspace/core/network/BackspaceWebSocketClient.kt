@@ -2,9 +2,12 @@ package com.backspace.core.network
 
 import com.backspace.core.model.Channel
 import com.backspace.core.model.ChannelCategory
+import com.backspace.core.model.ChosenUserStatus
 import com.backspace.core.model.InstanceStreamingLimits
+import com.backspace.core.model.Message
 import com.backspace.core.model.Space
 import com.backspace.core.model.SpaceVoiceState
+import com.backspace.core.model.StatusRevertDuration
 import com.backspace.core.model.User
 import com.backspace.core.model.VoiceUserState
 import kotlinx.coroutines.CoroutineScope
@@ -50,6 +53,7 @@ data class RealtimeSnapshot(
     val voiceStates: Map<String, List<String>> = emptyMap(),
     val voiceUserStates: Map<String, VoiceUserState> = emptyMap(),
     val spaceVoiceStates: Map<String, SpaceVoiceState> = emptyMap(),
+    val messagesByChannel: Map<String, List<Message>> = emptyMap(),
     val lastError: String? = null,
 )
 
@@ -68,6 +72,7 @@ class BackspaceWebSocketClient(
     @Volatile private var shouldReconnect: Boolean = false
     private var heartbeatJob: Job? = null
     private var reconnectJob: Job? = null
+    private var statusRevertJob: Job? = null
     private var reconnectAttempt = 0
 
     fun connect(instanceUrl: String, token: String) {
@@ -131,6 +136,79 @@ class BackspaceWebSocketClient(
             buildJsonObject {
                 put("type", "presence_update")
                 put("status", status)
+            },
+        )
+    }
+
+    /**
+     * Atualiza status e opcionalmente agenda reversão automática para o status anterior.
+     */
+    fun setStatusWithOptionalRevert(
+        status: ChosenUserStatus,
+        customStatus: String?,
+        revertDuration: StatusRevertDuration,
+    ) {
+        val url = activeInstanceUrl ?: return
+        val token = activeToken ?: return
+        val previousStatus = _snapshot.value.currentUser?.status ?: ChosenUserStatus.ONLINE.wireValue
+
+        statusRevertJob?.cancel()
+        sendPresenceUpdate(status.wireValue)
+
+        scope.launch {
+            runCatching {
+                restClient.updateMyStatus(
+                    instanceUrl = url,
+                    token = token,
+                    status = status.wireValue,
+                    customStatus = customStatus,
+                )
+            }.onSuccess { updatedUser ->
+                _snapshot.update { it.copy(currentUser = updatedUser) }
+            }
+        }
+
+        val minutes = revertDuration.minutes
+        if (minutes != null && minutes > 0) {
+            statusRevertJob = scope.launch {
+                delay(minutes * 60_000L)
+                sendPresenceUpdate(previousStatus)
+                runCatching {
+                    restClient.updateMyStatus(
+                        instanceUrl = url,
+                        token = token,
+                        status = previousStatus,
+                    )
+                }.onSuccess { reverted ->
+                    _snapshot.update { it.copy(currentUser = reverted) }
+                }
+            }
+        }
+    }
+
+    fun mergeChannelHistory(channelId: String, history: List<Message>) {
+        _snapshot.update { current ->
+            val existing = current.messagesByChannel[channelId].orEmpty()
+            val merged = (history + existing)
+                .distinctBy { it.id }
+                .sortedBy { it.createdAt }
+            current.copy(messagesByChannel = current.messagesByChannel + (channelId to merged))
+        }
+    }
+
+    fun appendLocalMessage(channelId: String, message: Message) {
+        _snapshot.update { current ->
+            val existing = current.messagesByChannel[channelId].orEmpty()
+            if (existing.any { it.id == message.id }) return@update current
+            current.copy(messagesByChannel = current.messagesByChannel + (channelId to (existing + message)))
+        }
+    }
+
+    fun sendChannelAck(channelId: String) {
+        sendJson(
+            buildJsonObject {
+                put("type", "channel_ack")
+                put("channelId", channelId)
             },
         )
     }
@@ -243,6 +321,10 @@ class BackspaceWebSocketClient(
             "category_updated" -> handleCategoryUpdated(obj)
             "channel_updated" -> handleChannelUpdated(obj)
             "presence_update" -> handlePresenceUpdate(obj)
+            "message_create" -> handleMessageCreate(obj)
+            "message_edit" -> handleMessageEdit(obj)
+            "message_delete" -> handleMessageDelete(obj)
+            "user_updated" -> handleUserUpdated(obj)
         }
     }
 
@@ -403,6 +485,47 @@ class BackspaceWebSocketClient(
                 )
             }
             current.copy(currentUser = updatedMe, spaces = updatedSpaces)
+        }
+    }
+
+    private fun handleMessageCreate(obj: JsonObject) {
+        val msgElem = obj["message"] ?: return
+        val msg = runCatching { json.decodeFromJsonElement<Message>(msgElem) }.getOrNull() ?: return
+        appendLocalMessage(msg.channelId, msg)
+    }
+
+    private fun handleMessageEdit(obj: JsonObject) {
+        val msgElem = obj["message"] ?: return
+        val updated = runCatching { json.decodeFromJsonElement<Message>(msgElem) }.getOrNull() ?: return
+        _snapshot.update { current ->
+            val list = current.messagesByChannel[updated.channelId] ?: return@update current
+            current.copy(
+                messagesByChannel = current.messagesByChannel + (
+                    updated.channelId to list.map { if (it.id == updated.id) updated else it }
+                ),
+            )
+        }
+    }
+
+    private fun handleMessageDelete(obj: JsonObject) {
+        val channelId = obj["channelId"]?.jsonPrimitive?.contentOrNull ?: return
+        val messageId = obj["messageId"]?.jsonPrimitive?.contentOrNull ?: return
+        _snapshot.update { current ->
+            val list = current.messagesByChannel[channelId] ?: return@update current
+            current.copy(
+                messagesByChannel = current.messagesByChannel + (
+                    channelId to list.filterNot { it.id == messageId }
+                ),
+            )
+        }
+    }
+
+    private fun handleUserUpdated(obj: JsonObject) {
+        val userElem = obj["user"] ?: return
+        val updatedUser = runCatching { json.decodeFromJsonElement<User>(userElem) }.getOrNull() ?: return
+        _snapshot.update { current ->
+            val updatedMe = if (current.currentUser?.id == updatedUser.id) updatedUser else current.currentUser
+            current.copy(currentUser = updatedMe)
         }
     }
 }
