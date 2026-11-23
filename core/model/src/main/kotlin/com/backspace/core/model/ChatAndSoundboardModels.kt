@@ -69,6 +69,68 @@ data class QueuedOutgoingMessage(
 )
 
 @Serializable
+data class DmChannel(
+    val id: String,
+    val name: String? = null,
+    val icon: String? = null,
+    val ownerId: String? = null,
+    val createdAt: Long = 0L,
+    val members: List<User> = emptyList(),
+) {
+    val isGroup: Boolean get() = members.size > 2 || !name.isNullOrBlank()
+
+    fun displayTitle(myUserId: String?): String {
+        if (!name.isNullOrBlank()) return name
+        val others = members.filter { it.id != myUserId }
+        return if (others.isEmpty()) {
+            members.firstOrNull()?.label ?: "DM"
+        } else {
+            others.joinToString(", ") { it.label }
+        }
+    }
+
+    fun avatarUrl(instanceUrl: String, myUserId: String?): String? {
+        if (!icon.isNullOrBlank()) return "$instanceUrl/api/uploads/$icon"
+        val other = members.firstOrNull { it.id != myUserId } ?: members.firstOrNull()
+        return other?.avatarUrl(instanceUrl)
+    }
+}
+
+@Serializable
+data class DmMessage(
+    val id: String,
+    val dmChannelId: String = "",
+    val userId: String = "",
+    val content: String? = null,
+    val type: String = "user",
+    val createdAt: Long = 0L,
+    val editedAt: Long? = null,
+    val replyToId: String? = null,
+    val replyTo: DmMessage? = null,
+    val user: User? = null,
+    val attachments: List<MessageAttachment> = emptyList(),
+    val reactions: List<MessageReaction> = emptyList(),
+) {
+    val authorLabel: String get() = user?.label ?: userId
+    val safeContent: String get() = content.orEmpty()
+
+    fun toChannelMessage(): Message = Message(
+        id = id,
+        channelId = dmChannelId,
+        userId = userId,
+        content = content,
+        type = type,
+        createdAt = createdAt,
+        editedAt = editedAt,
+        replyToId = replyToId,
+        replyTo = replyTo?.toChannelMessage(),
+        user = user,
+        attachments = attachments,
+        reactions = reactions,
+    )
+}
+
+@Serializable
 data class SoundboardSound(
     val id: String,
     val name: String,

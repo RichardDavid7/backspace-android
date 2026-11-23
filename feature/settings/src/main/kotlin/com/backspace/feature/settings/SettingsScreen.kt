@@ -23,6 +23,10 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -32,18 +36,25 @@ import com.backspace.core.designsystem.AetherPurpleSlider
 import com.backspace.core.designsystem.AetherSurfaceCard
 import com.backspace.core.designsystem.AetherTheme
 import com.backspace.core.model.AudioMode
+import com.backspace.core.network.BackspaceRestClient
+import com.backspace.core.network.BackspaceWebSocketClient
 import com.backspace.core.voice.BackspaceVoiceEngine
+import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen(
     instanceUrl: String,
+    jwtToken: String,
     username: String,
     appVersion: String,
+    restClient: BackspaceRestClient,
+    wsClient: BackspaceWebSocketClient,
     voiceEngine: BackspaceVoiceEngine,
     title: String,
     accountHeader: String,
     audioHeader: String,
     videoHeader: String,
+    instanceAdminHeader: String,
     voiceModeLabel: String,
     musicModeLabel: String,
     stereoLabel: String,
@@ -52,14 +63,20 @@ fun SettingsScreen(
     soundboardVolumeLabel: String,
     hideNonVideoLabel: String,
     checkUpdatesLabel: String,
+    saveLabel: String,
     logoutLabel: String,
     onCheckUpdates: () -> Unit,
     onLogout: () -> Unit,
     onBack: () -> Unit,
 ) {
     val colors = AetherTheme.colors
+    val scope = rememberCoroutineScope()
     val voiceState by voiceEngine.state.collectAsStateWithLifecycle()
+    val snapshot by wsClient.snapshot.collectAsStateWithLifecycle()
     val prefs = voiceState.userPrefs
+    val isInstanceAdmin = snapshot.currentUser?.isAdmin == true
+    val limits = snapshot.streamingLimits
+    var adminStatusMsg by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = Modifier
@@ -191,6 +208,73 @@ fun SettingsScreen(
                     checked = prefs.hideNonVideoParticipants,
                     onCheckedChange = { v ->
                         voiceEngine.updateUserAudioPreferences { it.copy(hideNonVideoParticipants = v) }
+                    },
+                )
+            }
+        }
+
+        if (isInstanceAdmin) {
+            var instDefaultBr by remember(limits.defaultAudioBitrateKbps) { mutableStateOf(limits.defaultAudioBitrateKbps.toFloat()) }
+            var instMaxBr by remember(limits.maxAudioBitrateKbps) { mutableStateOf(limits.maxAudioBitrateKbps.toFloat()) }
+            var instMusic by remember(limits.allowMusicMode) { mutableStateOf(limits.allowMusicMode) }
+            var instStereo by remember(limits.allowStereoAudio) { mutableStateOf(limits.allowStereoAudio) }
+            var instSoundboard by remember(limits.soundboardEnabled) { mutableStateOf(limits.soundboardEnabled) }
+
+            AetherSurfaceCard {
+                Text(text = instanceAdminHeader, style = MaterialTheme.typography.titleMedium, color = colors.accentAmber)
+                Spacer(Modifier.height(8.dp))
+                Text("Opus default: ${instDefaultBr.toInt()} kbps", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
+                AetherPurpleSlider(value = instDefaultBr, onValueChange = { instDefaultBr = it }, valueRange = 8f..512f)
+                Text("Opus max: ${instMaxBr.toInt()} kbps", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
+                AetherPurpleSlider(value = instMaxBr, onValueChange = { instMaxBr = it }, valueRange = 8f..512f)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(musicModeLabel, color = colors.textPrimary)
+                    Switch(checked = instMusic, onCheckedChange = { instMusic = it })
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(stereoLabel, color = colors.textPrimary)
+                    Switch(checked = instStereo, onCheckedChange = { instStereo = it })
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("Soundboard", color = colors.textPrimary)
+                    Switch(checked = instSoundboard, onCheckedChange = { instSoundboard = it })
+                }
+                if (!adminStatusMsg.isNullOrBlank()) {
+                    Text(adminStatusMsg!!, color = colors.accentMint, style = MaterialTheme.typography.bodySmall)
+                }
+                Spacer(Modifier.height(6.dp))
+                AetherPrimaryButton(
+                    text = saveLabel,
+                    onClick = {
+                        scope.launch {
+                            val updatedLimits = limits.copy(
+                                defaultAudioBitrateKbps = instDefaultBr.toInt(),
+                                maxAudioBitrateKbps = instMaxBr.toInt().coerceAtLeast(instDefaultBr.toInt()),
+                                allowMusicMode = instMusic,
+                                allowStereoAudio = instStereo,
+                                soundboardEnabled = instSoundboard,
+                            )
+                            runCatching {
+                                restClient.updateStreamingLimits(instanceUrl, jwtToken, updatedLimits)
+                            }.onSuccess { saved ->
+                                wsClient.updateStreamingLimitsLocal(saved)
+                                adminStatusMsg = "OK"
+                            }.onFailure { err ->
+                                adminStatusMsg = err.message
+                            }
+                        }
                     },
                 )
             }

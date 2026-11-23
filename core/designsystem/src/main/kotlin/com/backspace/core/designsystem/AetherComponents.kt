@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -12,15 +13,19 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 
 @Composable
 fun AetherSurfaceCard(
@@ -85,6 +90,50 @@ fun AetherPurpleSlider(
             inactiveTrackColor = colors.interactiveMuted,
         ),
     )
+}
+
+@Composable
+fun AetherAvatar(
+    imageUrl: String?,
+    fallbackLabel: String,
+    size: Dp = 32.dp,
+    status: String? = null,
+    modifier: Modifier = Modifier,
+) {
+    val colors = AetherTheme.colors
+    val initial = fallbackLabel.trim().firstOrNull()?.uppercase() ?: "?"
+
+    Box(modifier = modifier.size(size)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(CircleShape)
+                .background(colors.bgElevated),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (!imageUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = imageUrl,
+                    contentDescription = fallbackLabel,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Text(
+                    text = initial,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.accentPrimary,
+                )
+            }
+        }
+        if (status != null) {
+            AetherStatusDot(
+                status = status,
+                size = (size.value * 0.32f).coerceIn(8f, 14f).dp,
+                modifier = Modifier.align(Alignment.BottomEnd),
+            )
+        }
+    }
 }
 
 @Composable

@@ -28,11 +28,17 @@ data class User(
     val username: String,
     val displayName: String? = null,
     val avatar: String? = null,
+    val banner: String? = null,
+    val accentColor: String? = null,
     val avatarColor: String? = null,
+    val bio: String? = null,
     val status: String = "online",
     val customStatus: String? = null,
+    val isAdmin: Boolean = false,
 ) {
     val label: String get() = displayName?.takeIf { it.isNotBlank() } ?: username
+    fun avatarUrl(instanceUrl: String): String? =
+        avatar?.takeIf { it.isNotBlank() }?.let { "$instanceUrl/api/uploads/$it" }
 }
 
 @Serializable
@@ -51,7 +57,10 @@ data class Space(
     val maxAudioBitrateKbps: Int? = null,
     val allowMusicMode: Boolean? = null,
     val allowStereoAudio: Boolean? = null,
-)
+) {
+    fun iconUrl(instanceUrl: String): String? =
+        icon?.takeIf { it.isNotBlank() }?.let { "$instanceUrl/api/uploads/$it" }
+}
 
 @Serializable
 data class ChannelCategory(

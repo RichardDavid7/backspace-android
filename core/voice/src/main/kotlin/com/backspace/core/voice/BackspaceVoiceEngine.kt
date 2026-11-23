@@ -215,6 +215,77 @@ class BackspaceVoiceEngine(
         }
     }
 
+    fun joinDmCall(
+        instanceUrl: String,
+        jwtToken: String,
+        dmChannelId: String,
+        dmTitle: String,
+    ) {
+        scope.launch {
+            if (_state.value.channelId == dmChannelId && _state.value.status == VoiceConnectionStatus.CONNECTED) {
+                return@launch
+            }
+            cleanupRoomOnly()
+
+            currentInstanceUrl = instanceUrl
+            currentJwt = jwtToken
+
+            val snapshot = wsClient.snapshot.value
+            val policy = AudioPolicyResolver.resolvePolicy(instance = snapshot.streamingLimits)
+            val effective = AudioPolicyResolver.resolveEffectiveConfig(policy, _state.value.userPrefs)
+            val preferredRoute = audioRouter.detectPreferredRoute()
+
+            _state.update {
+                it.copy(
+                    status = VoiceConnectionStatus.CONNECTING,
+                    spaceId = null,
+                    spaceName = "DM",
+                    channelId = dmChannelId,
+                    channelName = dmTitle,
+                    effectiveAudio = effective,
+                    outputRoute = preferredRoute,
+                    isIdleSuspended = false,
+                    errorMessage = null,
+                )
+            }
+
+            runCatching {
+                val tokenResp = restClient.requestLiveKitDmToken(instanceUrl, jwtToken, dmChannelId)
+                audioRouter.enterVoiceMode()
+                audioRouter.setOutputRoute(preferredRoute)
+
+                val lkRoom = createConfiguredRoom(effective)
+                room = lkRoom
+                observeRoomEvents(lkRoom)
+
+                lkRoom.connect(url = tokenResp.url, token = tokenResp.token)
+                lkRoom.localParticipant.setMicrophoneEnabled(!_state.value.isMuted && !_state.value.isDeafened)
+
+                VoiceForegroundService.startOrUpdate(
+                    context = appContext,
+                    spaceName = "DM",
+                    channelName = dmTitle,
+                    isMuted = _state.value.isMuted,
+                    isDeafened = _state.value.isDeafened,
+                    bitrateKbps = effective.bitrateKbps,
+                )
+
+                _state.update { it.copy(status = VoiceConnectionStatus.CONNECTED) }
+                refreshParticipants(lkRoom)
+                startTelemetryLoop()
+                scheduleIdleSuspendCheck()
+            }.onFailure { err ->
+                cleanupRoomOnly()
+                _state.update {
+                    it.copy(
+                        status = VoiceConnectionStatus.ERROR,
+                        errorMessage = err.message ?: "DM call failed",
+                    )
+                }
+            }
+        }
+    }
+
     fun leaveChannel() {
         scope.launch {
             cleanupRoomOnly()

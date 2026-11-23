@@ -40,6 +40,13 @@
     <string name="settings_video">视频</string>
     <string name="settings_check_updates">检查更新</string>
     <string name="settings_logout">退出登录</string>
+    <string name="settings_instance_admin">实例管理</string>
+    <string name="spaces_members_title">成员</string>
+    <string name="space_admin_title">空间管理</string>
+    <string name="dm_title">私信</string>
+    <string name="dm_empty">暂无私信。</string>
+    <string name="dm_group_badge">群组</string>
+    <string name="dm_send_message">发送私信</string>
     <string name="common_save">保存</string>
     <string name="common_cancel">取消</string>
     <string name="updater_repo_slug" translatable="false"></string>

@@ -31,6 +31,8 @@ import com.backspace.core.designsystem.BackspaceAetherTheme
 import com.backspace.core.network.StoredSession
 import com.backspace.feature.auth.AuthScreen
 import com.backspace.feature.chat.ChatChannelScreen
+import com.backspace.feature.dm.DmChatScreen
+import com.backspace.feature.dm.DmListScreen
 import com.backspace.feature.settings.SettingsScreen
 import com.backspace.feature.soundboard.SoundboardScreen
 import com.backspace.feature.spaces.SpacesScreen
@@ -110,7 +112,11 @@ private fun BackspaceRootApp(container: AppContainer) {
         }
 
         composable("spaces") {
+            val active = session ?: return@composable
             SpacesScreen(
+                instanceUrl = active.instanceUrl,
+                jwtToken = active.token,
+                restClient = container.restClient,
                 wsClient = container.wsClient,
                 voiceEngine = container.voiceEngine,
                 spacesTitle = stringResource(R.string.spaces_title),
@@ -122,14 +128,21 @@ private fun BackspaceRootApp(container: AppContainer) {
                 statusDndLabel = stringResource(R.string.status_dnd),
                 customStatusPlaceholder = stringResource(R.string.status_custom_placeholder),
                 revertTimerLabel = stringResource(R.string.status_revert_timer),
+                membersTitle = stringResource(R.string.spaces_members_title),
+                sendDmLabel = stringResource(R.string.dm_send_message),
+                spaceAdminTitle = stringResource(R.string.space_admin_title),
                 saveLabel = stringResource(R.string.common_save),
                 cancelLabel = stringResource(R.string.common_cancel),
+                onOpenDms = { navController.navigate("dms") },
+                onOpenDirectDm = { dmId, dmTitle ->
+                    val encoded = Uri.encode(dmTitle)
+                    navController.navigate("dm/$dmId/$encoded")
+                },
                 onOpenTextChannel = { channel ->
                     val encodedName = Uri.encode(channel.name)
                     navController.navigate("chat/${channel.id}/$encodedName")
                 },
                 onJoinVoiceChannel = { space, category, channel ->
-                    val active = session ?: return@SpacesScreen
                     container.voiceEngine.joinChannel(
                         instanceUrl = active.instanceUrl,
                         jwtToken = active.token,
@@ -144,18 +157,80 @@ private fun BackspaceRootApp(container: AppContainer) {
             )
         }
 
+        composable("dms") {
+            val active = session ?: return@composable
+            val myId = container.wsClient.snapshot.value.currentUser?.id
+            DmListScreen(
+                instanceUrl = active.instanceUrl,
+                wsClient = container.wsClient,
+                title = stringResource(R.string.dm_title),
+                emptyText = stringResource(R.string.dm_empty),
+                groupBadge = stringResource(R.string.dm_group_badge),
+                onOpenDm = { dm ->
+                    val encoded = Uri.encode(dm.displayTitle(myId))
+                    navController.navigate("dm/${dm.id}/$encoded")
+                },
+                onStartDmCall = { dm ->
+                    container.voiceEngine.joinDmCall(
+                        instanceUrl = active.instanceUrl,
+                        jwtToken = active.token,
+                        dmChannelId = dm.id,
+                        dmTitle = dm.displayTitle(myId),
+                    )
+                    navController.navigate("voice")
+                },
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(
+            route = "dm/{dmId}/{dmTitle}",
+            arguments = listOf(
+                navArgument("dmId") { type = NavType.StringType },
+                navArgument("dmTitle") { type = NavType.StringType },
+            ),
+        ) { backStackEntry ->
+            val active = session ?: return@composable
+            val dmId = backStackEntry.arguments?.getString("dmId").orEmpty()
+            val dmTitle = Uri.decode(backStackEntry.arguments?.getString("dmTitle").orEmpty())
+            DmChatScreen(
+                instanceUrl = active.instanceUrl,
+                jwtToken = active.token,
+                dmChannelId = dmId,
+                dmTitle = dmTitle,
+                restClient = container.restClient,
+                wsClient = container.wsClient,
+                messagePlaceholder = stringResource(R.string.chat_message_placeholder),
+                emptyText = stringResource(R.string.chat_empty),
+                onStartCall = {
+                    container.voiceEngine.joinDmCall(
+                        instanceUrl = active.instanceUrl,
+                        jwtToken = active.token,
+                        dmChannelId = dmId,
+                        dmTitle = dmTitle,
+                    )
+                    navController.navigate("voice")
+                },
+                onBack = { navController.popBackStack() },
+            )
+        }
+
         composable("settings") {
-            val active = session
+            val active = session ?: return@composable
             val currentUserLabel = container.wsClient.snapshot.value.currentUser?.label ?: "-"
             SettingsScreen(
-                instanceUrl = active?.instanceUrl ?: "-",
+                instanceUrl = active.instanceUrl,
+                jwtToken = active.token,
                 username = currentUserLabel,
-                appVersion = "0.4.0-alpha",
+                appVersion = "0.5.0-alpha",
+                restClient = container.restClient,
+                wsClient = container.wsClient,
                 voiceEngine = container.voiceEngine,
                 title = stringResource(R.string.settings_title),
                 accountHeader = stringResource(R.string.settings_account),
                 audioHeader = stringResource(R.string.voice_opus_title),
                 videoHeader = stringResource(R.string.settings_video),
+                instanceAdminHeader = stringResource(R.string.settings_instance_admin),
                 voiceModeLabel = stringResource(R.string.voice_mode_voice),
                 musicModeLabel = stringResource(R.string.voice_mode_music),
                 stereoLabel = stringResource(R.string.voice_stereo),
@@ -164,13 +239,14 @@ private fun BackspaceRootApp(container: AppContainer) {
                 soundboardVolumeLabel = stringResource(R.string.soundboard_volume),
                 hideNonVideoLabel = stringResource(R.string.voice_hide_non_video),
                 checkUpdatesLabel = stringResource(R.string.settings_check_updates),
+                saveLabel = stringResource(R.string.common_save),
                 logoutLabel = stringResource(R.string.settings_logout),
                 onCheckUpdates = {
                     scope.launch {
                         val repoSlug = context.getString(R.string.updater_repo_slug)
                         val result = container.releaseUpdater.checkLatestRelease(
                             repoSlug = repoSlug,
-                            currentVersion = "0.4.0-alpha",
+                            currentVersion = "0.5.0-alpha",
                         )
                         if (result != null && result.updateAvailable && result.downloadUrl.isNotBlank()) {
                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(result.downloadUrl)))

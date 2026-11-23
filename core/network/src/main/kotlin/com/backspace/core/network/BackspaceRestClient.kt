@@ -1,12 +1,15 @@
 package com.backspace.core.network
 
 import android.util.Base64
+import com.backspace.core.model.DmChannel
+import com.backspace.core.model.DmMessage
 import com.backspace.core.model.InstanceInfo
 import com.backspace.core.model.InstanceStreamingLimits
 import com.backspace.core.model.LiveKitTokenResponse
 import com.backspace.core.model.Message
 import com.backspace.core.model.MessageAttachment
 import com.backspace.core.model.SoundboardListResponse
+import com.backspace.core.model.Space
 import com.backspace.core.model.User
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -26,7 +29,23 @@ data class LoginRequest(val username: String, val password: String)
 data class LoginResponse(val token: String, val user: User)
 
 @Serializable
-data class LiveKitTokenRequest(val channelId: String)
+data class LiveKitTokenRequest(
+    val channelId: String? = null,
+    val dmChannelId: String? = null,
+)
+
+@Serializable
+data class CreateDmRequest(val userId: String)
+
+@Serializable
+data class UpdateSpaceAdminRequest(
+    val name: String? = null,
+    val description: String? = null,
+    val audioBitrateKbps: Int? = null,
+    val maxAudioBitrateKbps: Int? = null,
+    val allowMusicMode: Boolean? = null,
+    val allowStereoAudio: Boolean? = null,
+)
 
 @Serializable
 data class SendMessageRequest(
@@ -96,7 +115,112 @@ class BackspaceRestClient(
         val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
         return executePost(
             url = "$base/api/livekit/token",
-            body = json.encodeToString(LiveKitTokenRequest.serializer(), LiveKitTokenRequest(channelId)),
+            body = json.encodeToString(LiveKitTokenRequest.serializer(), LiveKitTokenRequest(channelId = channelId)),
+            token = token,
+        )
+    }
+
+    suspend fun requestLiveKitDmToken(
+        instanceUrl: String,
+        token: String,
+        dmChannelId: String,
+    ): LiveKitTokenResponse {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executePost(
+            url = "$base/api/livekit/token",
+            body = json.encodeToString(LiveKitTokenRequest.serializer(), LiveKitTokenRequest(dmChannelId = dmChannelId)),
+            token = token,
+        )
+    }
+
+    suspend fun getDmChannels(instanceUrl: String, token: String): List<DmChannel> {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executeGet("$base/api/dm", token = token)
+    }
+
+    suspend fun createOrOpenDm(instanceUrl: String, token: String, targetUserId: String): DmChannel {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executePost(
+            url = "$base/api/dm",
+            body = json.encodeToString(CreateDmRequest.serializer(), CreateDmRequest(targetUserId)),
+            token = token,
+        )
+    }
+
+    suspend fun getDmMessages(
+        instanceUrl: String,
+        token: String,
+        dmChannelId: String,
+        limit: Int = 50,
+    ): List<DmMessage> {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executeGet("$base/api/dm/$dmChannelId/messages?limit=$limit", token = token)
+    }
+
+    suspend fun sendDmMessage(
+        instanceUrl: String,
+        token: String,
+        dmChannelId: String,
+        content: String?,
+        attachmentIds: List<String>? = null,
+        replyToId: String? = null,
+    ): DmMessage {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executePost(
+            url = "$base/api/dm/$dmChannelId/messages",
+            body = json.encodeToString(
+                SendMessageRequest.serializer(),
+                SendMessageRequest(
+                    content = content?.takeIf { it.isNotBlank() },
+                    attachments = attachmentIds?.takeIf { it.isNotEmpty() },
+                    replyToId = replyToId,
+                ),
+            ),
+            token = token,
+        )
+    }
+
+    suspend fun deleteDmMessage(
+        instanceUrl: String,
+        token: String,
+        messageId: String,
+    ) = withContext(Dispatchers.IO) {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val req = Request.Builder()
+            .url("$base/api/dm/messages/$messageId")
+            .header("Authorization", "Bearer $token")
+            .delete()
+            .build()
+        okHttpClient.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                throw BackspaceApiException(resp.code, null, "Delete DM failed (HTTP ${resp.code})")
+            }
+        }
+    }
+
+    suspend fun updateSpaceSettings(
+        instanceUrl: String,
+        token: String,
+        spaceId: String,
+        request: UpdateSpaceAdminRequest,
+    ): Space {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executePatch(
+            url = "$base/api/spaces/$spaceId",
+            body = json.encodeToString(UpdateSpaceAdminRequest.serializer(), request),
+            token = token,
+        )
+    }
+
+    suspend fun updateStreamingLimits(
+        instanceUrl: String,
+        token: String,
+        limits: InstanceStreamingLimits,
+    ): InstanceStreamingLimits {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executePatch(
+            url = "$base/api/settings/streaming",
+            body = json.encodeToString(InstanceStreamingLimits.serializer(), limits),
             token = token,
         )
     }

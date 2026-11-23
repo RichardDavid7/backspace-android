@@ -40,6 +40,13 @@
     <string name="settings_video">Video</string>
     <string name="settings_check_updates">Check for updates</string>
     <string name="settings_logout">Log out</string>
+    <string name="settings_instance_admin">Instance Administration</string>
+    <string name="spaces_members_title">Members</string>
+    <string name="space_admin_title">Space Administration</string>
+    <string name="dm_title">Direct Messages</string>
+    <string name="dm_empty">No direct messages yet.</string>
+    <string name="dm_group_badge">Group</string>
+    <string name="dm_send_message">Send DM</string>
     <string name="common_save">Save</string>
     <string name="common_cancel">Cancel</string>
     <string name="updater_repo_slug" translatable="false"></string>

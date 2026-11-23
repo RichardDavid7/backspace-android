@@ -40,6 +40,13 @@
     <string name="settings_video">Video</string>
     <string name="settings_check_updates">Nach Updates suchen</string>
     <string name="settings_logout">Abmelden</string>
+    <string name="settings_instance_admin">Instanzverwaltung</string>
+    <string name="spaces_members_title">Mitglieder</string>
+    <string name="space_admin_title">Space-Verwaltung</string>
+    <string name="dm_title">Direktnachrichten</string>
+    <string name="dm_empty">Noch keine Direktnachrichten.</string>
+    <string name="dm_group_badge">Gruppe</string>
+    <string name="dm_send_message">DM senden</string>
     <string name="common_save">Speichern</string>
     <string name="common_cancel">Abbrechen</string>
     <string name="updater_repo_slug" translatable="false"></string>

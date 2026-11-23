@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
@@ -17,9 +18,12 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material3.AlertDialog
@@ -29,6 +33,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -36,28 +41,39 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.backspace.core.designsystem.AetherStatusDot
+import com.backspace.core.designsystem.AetherAvatar
+import com.backspace.core.designsystem.AetherPrimaryButton
+import com.backspace.core.designsystem.AetherPurpleSlider
 import com.backspace.core.designsystem.AetherSurfaceCard
 import com.backspace.core.designsystem.AetherTheme
 import com.backspace.core.model.Channel
 import com.backspace.core.model.ChannelCategory
 import com.backspace.core.model.ChannelTreeBuilder
 import com.backspace.core.model.ChosenUserStatus
+import com.backspace.core.model.MemberWithUser
 import com.backspace.core.model.PermissionBits
 import com.backspace.core.model.Space
 import com.backspace.core.model.SpaceTreeItem
 import com.backspace.core.model.StatusRevertDuration
+import com.backspace.core.network.BackspaceRestClient
 import com.backspace.core.network.BackspaceWebSocketClient
+import com.backspace.core.network.UpdateSpaceAdminRequest
 import com.backspace.core.voice.BackspaceVoiceEngine
 import com.backspace.core.voice.VoiceConnectionStatus
+import kotlinx.coroutines.launch
 
 @Composable
 fun SpacesScreen(
+    instanceUrl: String,
+    jwtToken: String,
+    restClient: BackspaceRestClient,
     wsClient: BackspaceWebSocketClient,
     voiceEngine: BackspaceVoiceEngine,
     spacesTitle: String,
@@ -69,14 +85,20 @@ fun SpacesScreen(
     statusDndLabel: String,
     customStatusPlaceholder: String,
     revertTimerLabel: String,
+    membersTitle: String,
+    sendDmLabel: String,
+    spaceAdminTitle: String,
     saveLabel: String,
     cancelLabel: String,
+    onOpenDms: () -> Unit,
+    onOpenDirectDm: (dmChannelId: String, dmTitle: String) -> Unit,
     onOpenTextChannel: (Channel) -> Unit,
     onJoinVoiceChannel: (Space, ChannelCategory?, Channel) -> Unit,
     onOpenActiveVoice: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     val colors = AetherTheme.colors
+    val scope = rememberCoroutineScope()
     val snapshot by wsClient.snapshot.collectAsStateWithLifecycle()
     val voiceState by voiceEngine.state.collectAsStateWithLifecycle()
 
@@ -84,10 +106,17 @@ fun SpacesScreen(
         mutableStateOf(snapshot.spaces.firstOrNull()?.id)
     }
     var showStatusDialog by remember { mutableStateOf(false) }
+    var showMembersDialog by remember { mutableStateOf(false) }
+    var selectedProfileMember by remember { mutableStateOf<MemberWithUser?>(null) }
+    var showSpaceAdminDialog by remember { mutableStateOf(false) }
     val collapsedCategories = remember { mutableStateMapOf<String, Boolean>() }
 
     val selectedSpace = snapshot.spaces.firstOrNull { it.id == selectedSpaceId }
         ?: snapshot.spaces.firstOrNull()
+    val isSpaceAdmin = selectedSpace != null && (
+        PermissionBits.hasPermission(selectedSpace.myPermissions, PermissionBits.ADMINISTRATOR) ||
+            selectedSpace.ownerId == snapshot.currentUser?.id
+        )
 
     if (showStatusDialog) {
         StatusPickerDialog(
@@ -109,6 +138,59 @@ fun SpacesScreen(
         )
     }
 
+    if (showMembersDialog && selectedSpace != null) {
+        MembersListDialog(
+            instanceUrl = instanceUrl,
+            title = "$membersTitle (${selectedSpace.members.size})",
+            members = selectedSpace.members,
+            onSelectMember = { member ->
+                showMembersDialog = false
+                selectedProfileMember = member
+            },
+            onDismiss = { showMembersDialog = false },
+        )
+    }
+
+    selectedProfileMember?.let { member ->
+        UserProfileDialog(
+            instanceUrl = instanceUrl,
+            member = member,
+            isMe = member.userId == snapshot.currentUser?.id,
+            sendDmLabel = sendDmLabel,
+            onSendDm = {
+                selectedProfileMember = null
+                scope.launch {
+                    runCatching {
+                        val dm = restClient.createOrOpenDm(instanceUrl, jwtToken, member.userId)
+                        wsClient.addOrUpdateDmChannel(dm)
+                        dm
+                    }.onSuccess { dm ->
+                        onOpenDirectDm(dm.id, dm.displayTitle(snapshot.currentUser?.id))
+                    }
+                }
+            },
+            onDismiss = { selectedProfileMember = null },
+        )
+    }
+
+    if (showSpaceAdminDialog && selectedSpace != null) {
+        SpaceAdminDialog(
+            space = selectedSpace,
+            title = spaceAdminTitle,
+            saveLabel = saveLabel,
+            cancelLabel = cancelLabel,
+            onDismiss = { showSpaceAdminDialog = false },
+            onSave = { req ->
+                showSpaceAdminDialog = false
+                scope.launch {
+                    runCatching {
+                        restClient.updateSpaceSettings(instanceUrl, jwtToken, selectedSpace.id, req)
+                    }
+                }
+            },
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -123,9 +205,16 @@ fun SpacesScreen(
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clickable { showStatusDialog = true },
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { showStatusDialog = true },
             ) {
-                AetherStatusDot(status = snapshot.currentUser?.status ?: "offline", size = 12.dp)
+                AetherAvatar(
+                    imageUrl = snapshot.currentUser?.avatarUrl(instanceUrl),
+                    fallbackLabel = snapshot.currentUser?.label ?: "?",
+                    size = 38.dp,
+                    status = snapshot.currentUser?.status ?: "offline",
+                )
                 Spacer(Modifier.width(10.dp))
                 Column {
                     Text(
@@ -145,12 +234,39 @@ fun SpacesScreen(
                     )
                 }
             }
-            IconButton(onClick = onOpenSettings) {
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = "Settings",
-                    tint = colors.textSecondary,
-                )
+            Row {
+                IconButton(onClick = onOpenDms) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Chat,
+                        contentDescription = "DMs",
+                        tint = colors.accentSky,
+                    )
+                }
+                if (selectedSpace != null) {
+                    IconButton(onClick = { showMembersDialog = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Group,
+                            contentDescription = "Members",
+                            tint = colors.textSecondary,
+                        )
+                    }
+                }
+                if (isSpaceAdmin) {
+                    IconButton(onClick = { showSpaceAdminDialog = true }) {
+                        Icon(
+                            imageVector = Icons.Default.AdminPanelSettings,
+                            contentDescription = "Space Admin",
+                            tint = colors.accentAmber,
+                        )
+                    }
+                }
+                IconButton(onClick = onOpenSettings) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "Settings",
+                        tint = colors.textSecondary,
+                    )
+                }
             }
         }
 
@@ -198,11 +314,19 @@ fun SpacesScreen(
             return
         }
 
+        // Lista horizontal de Espaços com ícone oficial de cada Espaço
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(snapshot.spaces, key = { it.id }) { space ->
                 FilterChip(
                     selected = space.id == selectedSpace?.id,
                     onClick = { selectedSpaceId = space.id },
+                    leadingIcon = {
+                        AetherAvatar(
+                            imageUrl = space.iconUrl(instanceUrl),
+                            fallbackLabel = space.name,
+                            size = 22.dp,
+                        )
+                    },
                     label = { Text(space.name) },
                 )
             }
@@ -321,6 +445,216 @@ fun SpacesScreen(
             }
         }
     }
+}
+
+@Composable
+private fun MembersListDialog(
+    instanceUrl: String,
+    title: String,
+    members: List<MemberWithUser>,
+    onSelectMember: (MemberWithUser) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val colors = AetherTheme.colors
+    val sorted = remember(members) {
+        members.sortedWith(
+            compareBy<MemberWithUser> { if ((it.user?.status ?: "offline") == "offline") 1 else 0 }
+                .thenBy { it.label.lowercase() },
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = colors.bgChannel,
+        title = { Text(title, color = colors.textPrimary) },
+        text = {
+            LazyColumn(
+                modifier = Modifier.heightIn(max = 420.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(sorted, key = { it.userId }) { member ->
+                    val roleColor = member.highestRoleColorHex?.let {
+                        runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull()
+                    } ?: colors.textPrimary
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelectMember(member) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        AetherAvatar(
+                            imageUrl = member.user?.avatarUrl(instanceUrl),
+                            fallbackLabel = member.label,
+                            size = 34.dp,
+                            status = member.user?.status ?: "offline",
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Column {
+                            Text(text = member.label, color = roleColor, style = MaterialTheme.typography.bodyMedium)
+                            val custom = member.user?.customStatus
+                            if (!custom.isNullOrBlank()) {
+                                Text(text = custom, color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("OK", color = colors.accentPrimary)
+            }
+        },
+    )
+}
+
+@Composable
+private fun UserProfileDialog(
+    instanceUrl: String,
+    member: MemberWithUser,
+    isMe: Boolean,
+    sendDmLabel: String,
+    onSendDm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val colors = AetherTheme.colors
+    val user = member.user
+    val roleColor = member.highestRoleColorHex?.let {
+        runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull()
+    } ?: colors.textPrimary
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = colors.bgChannel,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                AetherAvatar(
+                    imageUrl = user?.avatarUrl(instanceUrl),
+                    fallbackLabel = member.label,
+                    size = 48.dp,
+                    status = user?.status ?: "offline",
+                )
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(text = member.label, color = roleColor, style = MaterialTheme.typography.titleMedium)
+                    Text(text = "@${user?.username ?: member.userId}", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (!user?.customStatus.isNullOrBlank()) {
+                    Text(text = user?.customStatus!!, color = colors.accentMint, style = MaterialTheme.typography.bodySmall)
+                }
+                if (!user?.bio.isNullOrBlank()) {
+                    Text(text = user?.bio!!, color = colors.textPrimary, style = MaterialTheme.typography.bodyMedium)
+                }
+                val visibleRoles = member.roles.filter { !it.isEveryone && it.name.isNotBlank() }
+                if (visibleRoles.isNotEmpty()) {
+                    Text(
+                        text = visibleRoles.joinToString(" · ") { it.name },
+                        color = colors.accentSky,
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+                if (!isMe) {
+                    Spacer(Modifier.height(4.dp))
+                    AetherPrimaryButton(text = sendDmLabel, onClick = onSendDm)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("OK", color = colors.textSecondary)
+            }
+        },
+    )
+}
+
+@Composable
+private fun SpaceAdminDialog(
+    space: Space,
+    title: String,
+    saveLabel: String,
+    cancelLabel: String,
+    onDismiss: () -> Unit,
+    onSave: (UpdateSpaceAdminRequest) -> Unit,
+) {
+    val colors = AetherTheme.colors
+    var name by remember { mutableStateOf(space.name) }
+    var description by remember { mutableStateOf(space.description.orEmpty()) }
+    var bitrate by remember { mutableStateOf((space.audioBitrateKbps ?: 64).toFloat()) }
+    var maxBitrate by remember { mutableStateOf((space.maxAudioBitrateKbps ?: 256).toFloat()) }
+    var allowMusic by remember { mutableStateOf(space.allowMusicMode ?: true) }
+    var allowStereo by remember { mutableStateOf(space.allowStereoAudio ?: true) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = colors.bgChannel,
+        title = { Text("$title · ${space.name}", color = colors.textPrimary) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Description") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text("Opus default: ${bitrate.toInt()} kbps", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
+                AetherPurpleSlider(value = bitrate, onValueChange = { bitrate = it }, valueRange = 8f..512f)
+                Text("Opus max: ${maxBitrate.toInt()} kbps", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
+                AetherPurpleSlider(value = maxBitrate, onValueChange = { maxBitrate = it }, valueRange = 8f..512f)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("Music mode", color = colors.textPrimary)
+                    Switch(checked = allowMusic, onCheckedChange = { allowMusic = it })
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("Stereo audio", color = colors.textPrimary)
+                    Switch(checked = allowStereo, onCheckedChange = { allowStereo = it })
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onSave(
+                        UpdateSpaceAdminRequest(
+                            name = name.trim().ifBlank { space.name },
+                            description = description.trim(),
+                            audioBitrateKbps = bitrate.toInt(),
+                            maxAudioBitrateKbps = maxBitrate.toInt().coerceAtLeast(bitrate.toInt()),
+                            allowMusicMode = allowMusic,
+                            allowStereoAudio = allowStereo,
+                        ),
+                    )
+                },
+            ) {
+                Text(saveLabel, color = colors.accentPrimary)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(cancelLabel, color = colors.textSecondary)
+            }
+        },
+    )
 }
 
 @Composable

@@ -78,6 +78,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.backspace.core.designsystem.AetherAvatar
 import com.backspace.core.designsystem.AetherSurfaceCard
 import com.backspace.core.designsystem.AetherTheme
 import com.backspace.core.model.Message
@@ -425,7 +426,7 @@ fun ChatChannelScreen(
                             }
                         }
 
-                        // Cabeçalho: nome de quem enviou à direita nas suas mensagens (ou à esquerda nos outros)
+                        // Cabeçalho: avatar pequeno + nome (à direita nas suas mensagens, à esquerda nos outros)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -437,17 +438,33 @@ fun ChatChannelScreen(
                                     style = MaterialTheme.typography.labelSmall,
                                     color = colors.textTertiary,
                                 )
-                                Text(
-                                    text = msg.authorLabel,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = authorColor,
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = msg.authorLabel,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = authorColor,
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    AetherAvatar(
+                                        imageUrl = msg.user?.avatarUrl(instanceUrl),
+                                        fallbackLabel = msg.authorLabel,
+                                        size = 24.dp,
+                                    )
+                                }
                             } else {
-                                Text(
-                                    text = msg.authorLabel,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = authorColor,
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    AetherAvatar(
+                                        imageUrl = msg.user?.avatarUrl(instanceUrl),
+                                        fallbackLabel = msg.authorLabel,
+                                        size = 24.dp,
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        text = msg.authorLabel,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = authorColor,
+                                    )
+                                }
                                 Text(
                                     text = formattedTime,
                                     style = MaterialTheme.typography.labelSmall,

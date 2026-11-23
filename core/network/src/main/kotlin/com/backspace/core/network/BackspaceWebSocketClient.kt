@@ -3,6 +3,8 @@ package com.backspace.core.network
 import com.backspace.core.model.Channel
 import com.backspace.core.model.ChannelCategory
 import com.backspace.core.model.ChosenUserStatus
+import com.backspace.core.model.DmChannel
+import com.backspace.core.model.DmMessage
 import com.backspace.core.model.InstanceStreamingLimits
 import com.backspace.core.model.Message
 import com.backspace.core.model.MessageReaction
@@ -53,6 +55,7 @@ data class RealtimeSnapshot(
     val connectionState: WsConnectionState = WsConnectionState.DISCONNECTED,
     val currentUser: User? = null,
     val spaces: List<Space> = emptyList(),
+    val dmChannels: List<DmChannel> = emptyList(),
     val streamingLimits: InstanceStreamingLimits = InstanceStreamingLimits(),
     val voiceStates: Map<String, List<String>> = emptyMap(),
     val voiceUserStates: Map<String, VoiceUserState> = emptyMap(),
@@ -433,6 +436,8 @@ class BackspaceWebSocketClient(
             "message_create", "message_created" -> handleMessageCreate(obj)
             "message_edit", "message_updated" -> handleMessageEdit(obj)
             "message_delete", "message_deleted" -> handleMessageDelete(obj)
+            "dm_message_created" -> handleDmMessageCreated(obj)
+            "dm_message_deleted" -> handleDmMessageDeleted(obj)
             "reaction_added" -> handleReactionAdded(obj)
             "reaction_removed" -> handleReactionRemoved(obj)
             "user_updated" -> handleUserUpdated(obj)
@@ -444,6 +449,9 @@ class BackspaceWebSocketClient(
         val user = obj["user"]?.let { runCatching { json.decodeFromJsonElement<User>(it) }.getOrNull() }
         val spaces = obj["spaces"]?.let { runCatching { json.decodeFromJsonElement<List<Space>>(it) }.getOrNull() }
             ?: emptyList()
+        val dmChannels = obj["dmChannels"]?.let {
+            runCatching { json.decodeFromJsonElement<List<DmChannel>>(it) }.getOrNull()
+        } ?: emptyList()
         val voiceStates = obj["voiceStates"]?.let {
             runCatching { json.decodeFromJsonElement<Map<String, List<String>>>(it) }.getOrNull()
         } ?: emptyMap()
@@ -459,6 +467,7 @@ class BackspaceWebSocketClient(
                 connectionState = WsConnectionState.AUTHENTICATED,
                 currentUser = user,
                 spaces = spaces,
+                dmChannels = dmChannels,
                 voiceStates = voiceStates,
                 voiceUserStates = voiceUserStates,
                 spaceVoiceStates = spaceVoiceStates,
@@ -676,6 +685,34 @@ class BackspaceWebSocketClient(
                 ),
             )
         }
+    }
+
+    fun addOrUpdateDmChannel(dm: DmChannel) {
+        _snapshot.update { cur ->
+            val exists = cur.dmChannels.any { it.id == dm.id }
+            val updated = if (exists) {
+                cur.dmChannels.map { if (it.id == dm.id) dm else it }
+            } else {
+                listOf(dm) + cur.dmChannels
+            }
+            cur.copy(dmChannels = updated)
+        }
+    }
+
+    fun updateStreamingLimitsLocal(limits: InstanceStreamingLimits) {
+        _snapshot.update { it.copy(streamingLimits = limits) }
+    }
+
+    private fun handleDmMessageCreated(obj: JsonObject) {
+        val msgElem = obj["message"] ?: return
+        val dmMsg = runCatching { json.decodeFromJsonElement<DmMessage>(msgElem) }.getOrNull() ?: return
+        appendLocalMessage(dmMsg.dmChannelId, dmMsg.toChannelMessage())
+    }
+
+    private fun handleDmMessageDeleted(obj: JsonObject) {
+        val dmId = obj["dmChannelId"]?.jsonPrimitive?.contentOrNull ?: return
+        val msgId = obj["messageId"]?.jsonPrimitive?.contentOrNull ?: return
+        removeLocalMessage(dmId, msgId)
     }
 
     private fun handleUserUpdated(obj: JsonObject) {
