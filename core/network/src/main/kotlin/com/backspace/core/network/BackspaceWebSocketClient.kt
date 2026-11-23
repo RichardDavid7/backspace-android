@@ -334,12 +334,14 @@ class BackspaceWebSocketClient(
                         replyToId = next.replyToId,
                     )
                 }
-                result.onSuccess { sent ->
+                val sent = result.getOrNull()
+                if (sent != null) {
                     appendLocalMessage(next.channelId, sent)
                     _snapshot.update { cur ->
                         cur.copy(queuedMessages = cur.queuedMessages.filterNot { it.localId == next.localId })
                     }
-                }.onFailure { err ->
+                } else {
+                    val err = result.exceptionOrNull()
                     // Erro HTTP 4xx (ex.: permissão) remove da fila; erro de rede mantém na fila para retry
                     if (err is BackspaceApiException && err.statusCode in 400..499) {
                         _snapshot.update { cur ->
@@ -349,7 +351,7 @@ class BackspaceWebSocketClient(
                             )
                         }
                     } else {
-                        _snapshot.update { it.copy(lastError = err.message) }
+                        _snapshot.update { it.copy(lastError = err?.message) }
                         break
                     }
                 }
