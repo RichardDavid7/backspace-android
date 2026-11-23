@@ -499,7 +499,7 @@ class BackspaceVoiceEngine(
                     userId = parts.getOrElse(0) { remote.sid.value },
                     username = parts.getOrElse(1) { remote.name ?: "User" },
                     isSpeaking = remote.isSpeaking,
-                    isMuted = !remote.isMicrophoneEnabled,
+                    isMuted = !remote.isMicrophoneEnabled(),
                     isLocal = false,
                 ),
             )

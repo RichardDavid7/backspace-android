@@ -476,8 +476,9 @@ class BackspaceWebSocketClient(
             val updatedSpaces = current.spaces.map { space ->
                 space.copy(
                     members = space.members.map { member ->
-                        if (member.userId == userId && member.user != null) {
-                            member.copy(user = member.user.copy(status = status))
+                        val memberUser = member.user
+                        if (member.userId == userId && memberUser != null) {
+                            member.copy(user = memberUser.copy(status = status))
                         } else {
                             member
                         }
