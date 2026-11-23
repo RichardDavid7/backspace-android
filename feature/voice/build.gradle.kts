@@ -29,5 +29,6 @@ android {
 dependencies {
     implementation(project(":core:designsystem"))
     implementation(project(":core:voice"))
+    implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
 }

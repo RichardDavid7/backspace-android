@@ -17,6 +17,8 @@
     <string name="voice_stereo">Áudio estéreo</string>
     <string name="voice_bitrate_auto">Bitrate automático</string>
     <string name="voice_idle_suspend">Suspender áudio ocioso</string>
+    <string name="voice_hide_non_video">Ocultar participantes sem vídeo</string>
+    <string name="voice_screen_share_badge">Tela</string>
     <string name="chat_message_placeholder">Escreva uma mensagem...</string>
     <string name="chat_empty">Nenhuma mensagem ainda.</string>
     <string name="soundboard_title">Soundboard</string>
@@ -29,6 +31,11 @@
     <string name="status_dnd">Não Perturbe</string>
     <string name="status_custom_placeholder">Status personalizado...</string>
     <string name="status_revert_timer">Reverter automaticamente após</string>
+    <string name="settings_title">Configurações</string>
+    <string name="settings_account">Conta</string>
+    <string name="settings_video">Vídeo</string>
+    <string name="settings_check_updates">Verificar atualizações</string>
+    <string name="settings_logout">Sair</string>
     <string name="common_save">Salvar</string>
     <string name="common_cancel">Cancelar</string>
     <string name="updater_repo_slug" translatable="false"></string>

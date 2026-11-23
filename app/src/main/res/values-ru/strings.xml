@@ -17,6 +17,8 @@
     <string name="voice_stereo">Стерео звук</string>
     <string name="voice_bitrate_auto">Авто битрейт</string>
     <string name="voice_idle_suspend">Приостанавливать неактивный звук</string>
+    <string name="voice_hide_non_video">Скрыть участников без видео</string>
+    <string name="voice_screen_share_badge">Экран</string>
     <string name="chat_message_placeholder">Напишите сообщение...</string>
     <string name="chat_empty">Сообщений пока нет.</string>
     <string name="soundboard_title">Саундборд</string>
@@ -29,6 +31,11 @@
     <string name="status_dnd">Не беспокоить</string>
     <string name="status_custom_placeholder">Пользовательский статус...</string>
     <string name="status_revert_timer">Автосброс через</string>
+    <string name="settings_title">Настройки</string>
+    <string name="settings_account">Аккаунт</string>
+    <string name="settings_video">Видео</string>
+    <string name="settings_check_updates">Проверить обновления</string>
+    <string name="settings_logout">Выйти</string>
     <string name="common_save">Сохранить</string>
     <string name="common_cancel">Отмена</string>
     <string name="updater_repo_slug" translatable="false"></string>

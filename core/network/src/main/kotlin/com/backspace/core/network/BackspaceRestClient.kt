@@ -1,9 +1,11 @@
 package com.backspace.core.network
 
+import android.util.Base64
 import com.backspace.core.model.InstanceInfo
 import com.backspace.core.model.InstanceStreamingLimits
 import com.backspace.core.model.LiveKitTokenResponse
 import com.backspace.core.model.Message
+import com.backspace.core.model.MessageAttachment
 import com.backspace.core.model.SoundboardListResponse
 import com.backspace.core.model.User
 import kotlinx.coroutines.Dispatchers
@@ -28,7 +30,8 @@ data class LiveKitTokenRequest(val channelId: String)
 
 @Serializable
 data class SendMessageRequest(
-    val content: String,
+    val content: String? = null,
+    val attachmentIds: List<String>? = null,
     val replyToId: String? = null,
 )
 
@@ -117,7 +120,8 @@ class BackspaceRestClient(
         instanceUrl: String,
         token: String,
         channelId: String,
-        content: String,
+        content: String?,
+        attachmentIds: List<String>? = null,
         replyToId: String? = null,
     ): Message {
         val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
@@ -125,10 +129,71 @@ class BackspaceRestClient(
             url = "$base/api/channels/$channelId/messages",
             body = json.encodeToString(
                 SendMessageRequest.serializer(),
-                SendMessageRequest(content = content, replyToId = replyToId),
+                SendMessageRequest(
+                    content = content?.takeIf { it.isNotBlank() },
+                    attachmentIds = attachmentIds?.takeIf { it.isNotEmpty() },
+                    replyToId = replyToId,
+                ),
             ),
             token = token,
         )
+    }
+
+    /**
+     * Faz upload de anexo via protocolo tus (`/api/files`) usado pelo servidor Backspace.
+     */
+    suspend fun uploadFileTus(
+        instanceUrl: String,
+        token: String,
+        originalName: String,
+        mimeType: String,
+        bytes: ByteArray,
+    ): MessageAttachment = withContext(Dispatchers.IO) {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val b64Name = Base64.encodeToString(originalName.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+        val b64Type = Base64.encodeToString(mimeType.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+
+        // 1. Criar sessão tus
+        val createReq = Request.Builder()
+            .url("$base/api/files")
+            .header("Authorization", "Bearer $token")
+            .header("Tus-Resumable", "1.0.0")
+            .header("Upload-Length", bytes.size.toString())
+            .header("Upload-Metadata", "filename $b64Name,filetype $b64Type")
+            .post(ByteArray(0).toRequestBody(null))
+            .build()
+
+        val uploadLocation = okHttpClient.newCall(createReq).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                throw BackspaceApiException(resp.code, null, "Upload init failed (HTTP ${resp.code})")
+            }
+            resp.header("Location")
+                ?: throw BackspaceApiException(500, null, "Missing tus Location header")
+        }
+
+        val patchUrl = if (uploadLocation.startsWith("http://") || uploadLocation.startsWith("https://")) {
+            uploadLocation
+        } else {
+            "$base/${uploadLocation.trimStart('/')}"
+        }
+
+        // 2. Enviar bytes via PATCH
+        val offsetMediaType = "application/offset+octet-stream".toMediaType()
+        val patchReq = Request.Builder()
+            .url(patchUrl)
+            .header("Authorization", "Bearer $token")
+            .header("Tus-Resumable", "1.0.0")
+            .header("Upload-Offset", "0")
+            .patch(bytes.toRequestBody(offsetMediaType))
+            .build()
+
+        okHttpClient.newCall(patchReq).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) {
+                throw BackspaceApiException(resp.code, null, "Upload failed (HTTP ${resp.code})")
+            }
+            json.decodeFromString(MessageAttachment.serializer(), raw)
+        }
     }
 
     suspend fun updateMyStatus(

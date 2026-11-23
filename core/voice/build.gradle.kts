@@ -24,10 +24,10 @@ android {
 
 dependencies {
     api(project(":core:model"))
+    api(libs.livekit.android)
     implementation(project(":core:network"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
-    implementation(libs.livekit.android)
 }

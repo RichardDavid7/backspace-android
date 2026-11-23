@@ -1,6 +1,7 @@
 package com.backspace.core.voice
 
 import android.content.Context
+import android.content.Intent
 import com.backspace.core.model.AudioChannelsMode
 import com.backspace.core.model.AudioMode
 import com.backspace.core.model.AudioOutputRoute
@@ -20,11 +21,15 @@ import io.livekit.android.LiveKit
 import io.livekit.android.RoomOptions
 import io.livekit.android.events.RoomEvent
 import io.livekit.android.events.collect
+import io.livekit.android.renderer.TextureViewRenderer
 import io.livekit.android.room.Room
 import io.livekit.android.room.participant.AudioTrackPublishDefaults
 import io.livekit.android.room.track.DataPublishReliability
 import io.livekit.android.room.track.LocalAudioTrackOptions
 import io.livekit.android.room.track.RemoteAudioTrack
+import io.livekit.android.room.track.Track
+import io.livekit.android.room.track.VideoTrack
+import io.livekit.android.room.track.screencapture.ScreenCaptureParams
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -48,11 +53,20 @@ enum class VoiceConnectionStatus {
     ERROR,
 }
 
+data class VoiceVideoTile(
+    val id: String,
+    val participantName: String,
+    val isScreenShare: Boolean,
+    val isLocal: Boolean,
+    val videoTrack: VideoTrack,
+)
+
 data class VoiceParticipantUi(
     val userId: String,
     val username: String,
     val isSpeaking: Boolean = false,
     val isMuted: Boolean = false,
+    val hasVideo: Boolean = false,
     val isLocal: Boolean = false,
 )
 
@@ -64,6 +78,8 @@ data class VoiceSessionState(
     val channelName: String = "",
     val isMuted: Boolean = false,
     val isDeafened: Boolean = false,
+    val isCameraOn: Boolean = false,
+    val isScreenSharing: Boolean = false,
     val isIdleSuspended: Boolean = false,
     val outputRoute: AudioOutputRoute = AudioOutputRoute.SPEAKER,
     val userPrefs: UserAudioPreferences = UserAudioPreferences(),
@@ -72,6 +88,7 @@ data class VoiceSessionState(
         userPrefs = UserAudioPreferences(),
     ),
     val participants: List<VoiceParticipantUi> = emptyList(),
+    val videoTiles: List<VoiceVideoTile> = emptyList(),
     val telemetry: VoiceTelemetry = VoiceTelemetry(),
     val soundboardVolume: Float = 0.8f,
     val lastSoundboardEvent: String? = null,
@@ -210,7 +227,10 @@ class BackspaceVoiceEngine(
                     channelId = null,
                     channelName = "",
                     isIdleSuspended = false,
+                    isCameraOn = false,
+                    isScreenSharing = false,
                     participants = emptyList(),
+                    videoTiles = emptyList(),
                     telemetry = VoiceTelemetry(),
                     errorMessage = null,
                 )
@@ -231,6 +251,93 @@ class BackspaceVoiceEngine(
             val nextDeafened = !_state.value.isDeafened
             val nextMuted = if (nextDeafened) true else _state.value.isMuted
             applyMuteDeafenState(isMuted = nextMuted, isDeafened = nextDeafened)
+        }
+    }
+
+    fun initVideoRenderer(renderer: TextureViewRenderer) {
+        room?.initVideoRenderer(renderer)
+    }
+
+    fun toggleCamera() {
+        scope.launch {
+            val lkRoom = room ?: return@launch
+            val nextCamera = !_state.value.isCameraOn
+            runCatching {
+                lkRoom.localParticipant.setCameraEnabled(nextCamera)
+            }.onSuccess {
+                _state.update { it.copy(isCameraOn = nextCamera) }
+                wsClient.sendVoiceStatus(
+                    isMuted = _state.value.isMuted,
+                    isDeafened = _state.value.isDeafened,
+                    isCameraOn = nextCamera,
+                    isScreenSharing = _state.value.isScreenSharing,
+                )
+                refreshParticipants(lkRoom)
+            }.onFailure { err ->
+                _state.update { it.copy(errorMessage = err.message) }
+            }
+        }
+    }
+
+    fun startScreenShare(mediaProjectionPermissionResultData: Intent) {
+        scope.launch {
+            val lkRoom = room ?: return@launch
+            // Android 14+ exige mediaProjection no ForegroundService ANTES de iniciar captura
+            VoiceForegroundService.startOrUpdate(
+                context = appContext,
+                spaceName = _state.value.spaceName,
+                channelName = _state.value.channelName,
+                isMuted = _state.value.isMuted,
+                isDeafened = _state.value.isDeafened,
+                bitrateKbps = _state.value.effectiveAudio.bitrateKbps,
+                isScreenSharing = true,
+            )
+            delay(200L)
+            runCatching {
+                lkRoom.localParticipant.setScreenShareEnabled(
+                    enabled = true,
+                    screenCaptureParams = ScreenCaptureParams(
+                        mediaProjectionPermissionResultData = mediaProjectionPermissionResultData,
+                    ),
+                )
+            }.onSuccess {
+                _state.update { it.copy(isScreenSharing = true) }
+                wsClient.sendVoiceStatus(
+                    isMuted = _state.value.isMuted,
+                    isDeafened = _state.value.isDeafened,
+                    isCameraOn = _state.value.isCameraOn,
+                    isScreenSharing = true,
+                )
+                refreshParticipants(lkRoom)
+            }.onFailure { err ->
+                _state.update { it.copy(errorMessage = err.message) }
+            }
+        }
+    }
+
+    fun stopScreenShare() {
+        scope.launch {
+            val lkRoom = room ?: return@launch
+            runCatching {
+                lkRoom.localParticipant.setScreenShareEnabled(false)
+            }
+            _state.update { it.copy(isScreenSharing = false) }
+            wsClient.sendVoiceStatus(
+                isMuted = _state.value.isMuted,
+                isDeafened = _state.value.isDeafened,
+                isCameraOn = _state.value.isCameraOn,
+                isScreenSharing = false,
+            )
+            VoiceForegroundService.startOrUpdate(
+                context = appContext,
+                spaceName = _state.value.spaceName,
+                channelName = _state.value.channelName,
+                isMuted = _state.value.isMuted,
+                isDeafened = _state.value.isDeafened,
+                bitrateKbps = _state.value.effectiveAudio.bitrateKbps,
+                isScreenSharing = false,
+            )
+            refreshParticipants(lkRoom)
         }
     }
 
@@ -387,6 +494,11 @@ class BackspaceVoiceEngine(
                         }
                         refreshParticipants(lkRoom)
                     }
+                    is RoomEvent.TrackUnsubscribed,
+                    is RoomEvent.TrackPublished,
+                    is RoomEvent.TrackUnpublished,
+                    is RoomEvent.TrackMuted,
+                    is RoomEvent.TrackUnmuted -> refreshParticipants(lkRoom)
                     is RoomEvent.ActiveSpeakersChanged -> refreshParticipants(lkRoom)
                     is RoomEvent.DataReceived -> handleDataReceived(event)
                     is RoomEvent.Reconnecting -> {
@@ -483,28 +595,67 @@ class BackspaceVoiceEngine(
     private fun refreshParticipants(lkRoom: Room) {
         val local = lkRoom.localParticipant
         val localIdParts = (local.identity?.value ?: "").split(":")
+        val localName = localIdParts.getOrElse(1) { wsClient.snapshot.value.currentUser?.label ?: "You" }
+        val tiles = mutableListOf<VoiceVideoTile>()
+
+        local.videoTrackPublications.forEach { (pub, track) ->
+            val vTrack = track as? VideoTrack ?: return@forEach
+            if (!pub.muted) {
+                tiles.add(
+                    VoiceVideoTile(
+                        id = "local:${pub.sid}",
+                        participantName = localName,
+                        isScreenShare = pub.source == Track.Source.SCREEN_SHARE,
+                        isLocal = true,
+                        videoTrack = vTrack,
+                    ),
+                )
+            }
+        }
+
         val list = mutableListOf(
             VoiceParticipantUi(
                 userId = localIdParts.getOrElse(0) { "me" },
-                username = localIdParts.getOrElse(1) { wsClient.snapshot.value.currentUser?.label ?: "You" },
+                username = localName,
                 isSpeaking = local.isSpeaking,
                 isMuted = _state.value.isMuted || _state.value.isIdleSuspended,
+                hasVideo = tiles.any { it.isLocal },
                 isLocal = true,
             ),
         )
         lkRoom.remoteParticipants.values.forEach { remote ->
             val parts = (remote.identity?.value ?: "").split(":")
+            val remoteName = parts.getOrElse(1) { remote.name ?: "User" }
+            var remoteHasVideo = false
+
+            remote.videoTrackPublications.forEach { (pub, track) ->
+                val vTrack = track as? VideoTrack ?: return@forEach
+                if (!pub.muted) {
+                    remoteHasVideo = true
+                    tiles.add(
+                        VoiceVideoTile(
+                            id = "${remote.sid.value}:${pub.sid}",
+                            participantName = remoteName,
+                            isScreenShare = pub.source == Track.Source.SCREEN_SHARE,
+                            isLocal = false,
+                            videoTrack = vTrack,
+                        ),
+                    )
+                }
+            }
+
             list.add(
                 VoiceParticipantUi(
                     userId = parts.getOrElse(0) { remote.sid.value },
-                    username = parts.getOrElse(1) { remote.name ?: "User" },
+                    username = remoteName,
                     isSpeaking = remote.isSpeaking,
                     isMuted = !remote.isMicrophoneEnabled(),
+                    hasVideo = remoteHasVideo,
                     isLocal = false,
                 ),
             )
         }
-        _state.update { it.copy(participants = list) }
+        _state.update { it.copy(participants = list, videoTiles = tiles) }
     }
 
     private fun applyRemoteAudioVolume(lkRoom: Room, muted: Boolean) {

@@ -15,8 +15,8 @@ android {
         applicationId = "com.backspace.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = (findProperty("versionCode") as? String)?.toIntOrNull() ?: 2
-        versionName = (findProperty("versionName") as? String)?.takeIf { it.isNotBlank() } ?: "0.2.0-alpha"
+        versionCode = (findProperty("versionCode") as? String)?.toIntOrNull() ?: 3
+        versionName = (findProperty("versionName") as? String)?.takeIf { it.isNotBlank() } ?: "0.3.0-alpha"
     }
 
     signingConfigs {
@@ -68,6 +68,7 @@ dependencies {
     implementation(project(":feature:voice"))
     implementation(project(":feature:chat"))
     implementation(project(":feature:soundboard"))
+    implementation(project(":feature:settings"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

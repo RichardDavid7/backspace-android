@@ -5,17 +5,30 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class MessageAttachment(
     val id: String = "",
+    val messageId: String = "",
     val filename: String = "",
-    val url: String = "",
-    val contentType: String? = null,
+    val originalName: String = "",
+    val mimetype: String = "",
     val size: Long = 0L,
-)
+    val thumbnailFilename: String? = null,
+    val width: Int? = null,
+    val height: Int? = null,
+    val duration: Double? = null,
+    val createdAt: Long = 0L,
+) {
+    val displayName: String get() = originalName.ifBlank { filename }
+    val isImage: Boolean get() = mimetype.startsWith("image/", ignoreCase = true)
+    fun downloadPath(): String = "/api/uploads/$filename"
+}
 
 @Serializable
 data class MessageReaction(
-    val emoji: String,
-    val count: Int = 1,
-    val me: Boolean = false,
+    val id: String = "",
+    val messageId: String = "",
+    val userId: String = "",
+    val emoji: String = "",
+    val createdAt: Long = 0L,
+    val user: User? = null,
 )
 
 @Serializable
@@ -23,15 +36,17 @@ data class Message(
     val id: String,
     val channelId: String,
     val userId: String = "",
-    val content: String = "",
-    val createdAt: String = "",
-    val editedAt: String? = null,
+    val content: String? = null,
+    val type: String = "user",
+    val createdAt: Long = 0L,
+    val editedAt: Long? = null,
     val replyToId: String? = null,
     val user: User? = null,
     val attachments: List<MessageAttachment> = emptyList(),
     val reactions: List<MessageReaction> = emptyList(),
 ) {
     val authorLabel: String get() = user?.label ?: userId
+    val safeContent: String get() = content.orEmpty()
 }
 
 @Serializable

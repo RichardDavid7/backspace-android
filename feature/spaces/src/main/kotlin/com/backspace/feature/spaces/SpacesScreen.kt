@@ -10,15 +10,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
@@ -31,6 +33,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -43,9 +46,11 @@ import com.backspace.core.designsystem.AetherSurfaceCard
 import com.backspace.core.designsystem.AetherTheme
 import com.backspace.core.model.Channel
 import com.backspace.core.model.ChannelCategory
+import com.backspace.core.model.ChannelTreeBuilder
 import com.backspace.core.model.ChosenUserStatus
 import com.backspace.core.model.PermissionBits
 import com.backspace.core.model.Space
+import com.backspace.core.model.SpaceTreeItem
 import com.backspace.core.model.StatusRevertDuration
 import com.backspace.core.network.BackspaceWebSocketClient
 import com.backspace.core.voice.BackspaceVoiceEngine
@@ -56,8 +61,6 @@ fun SpacesScreen(
     wsClient: BackspaceWebSocketClient,
     voiceEngine: BackspaceVoiceEngine,
     spacesTitle: String,
-    textChannelsHeader: String,
-    voiceChannelsHeader: String,
     noSpacesText: String,
     activeVoiceBannerPrefix: String,
     statusPickerTitle: String,
@@ -71,8 +74,7 @@ fun SpacesScreen(
     onOpenTextChannel: (Channel) -> Unit,
     onJoinVoiceChannel: (Space, ChannelCategory?, Channel) -> Unit,
     onOpenActiveVoice: () -> Unit,
-    onCheckUpdates: () -> Unit,
-    onLogout: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val colors = AetherTheme.colors
     val snapshot by wsClient.snapshot.collectAsStateWithLifecycle()
@@ -82,6 +84,7 @@ fun SpacesScreen(
         mutableStateOf(snapshot.spaces.firstOrNull()?.id)
     }
     var showStatusDialog by remember { mutableStateOf(false) }
+    val collapsedCategories = remember { mutableStateMapOf<String, Boolean>() }
 
     val selectedSpace = snapshot.spaces.firstOrNull { it.id == selectedSpaceId }
         ?: snapshot.spaces.firstOrNull()
@@ -110,7 +113,8 @@ fun SpacesScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(colors.bgBase)
-            .padding(16.dp),
+            .systemBarsPadding()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -141,25 +145,16 @@ fun SpacesScreen(
                     )
                 }
             }
-            Row {
-                IconButton(onClick = onCheckUpdates) {
-                    Icon(
-                        imageVector = Icons.Default.SystemUpdate,
-                        contentDescription = "Updates",
-                        tint = colors.textSecondary,
-                    )
-                }
-                IconButton(onClick = onLogout) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Logout,
-                        contentDescription = "Logout",
-                        tint = colors.textSecondary,
-                    )
-                }
+            IconButton(onClick = onOpenSettings) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = "Settings",
+                    tint = colors.textSecondary,
+                )
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
 
         if (voiceState.status == VoiceConnectionStatus.CONNECTED || voiceState.status == VoiceConnectionStatus.CONNECTING) {
             Surface(
@@ -193,7 +188,7 @@ fun SpacesScreen(
                     )
                 }
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(10.dp))
         }
 
         if (snapshot.spaces.isEmpty()) {
@@ -213,102 +208,110 @@ fun SpacesScreen(
             }
         }
 
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(10.dp))
 
         if (selectedSpace != null) {
             val canConnect = PermissionBits.hasPermission(selectedSpace.myPermissions, PermissionBits.CONNECT)
-            val textChannels = selectedSpace.channels.filterNot { it.isVoice }.sortedBy { it.position }
-            val voiceChannels = selectedSpace.channels.filter { it.isVoice }.sortedBy { it.position }
+            val treeItems = remember(selectedSpace) { ChannelTreeBuilder.build(selectedSpace) }
+            val memberById = remember(selectedSpace.members) { selectedSpace.members.associateBy { it.userId } }
 
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (voiceChannels.isNotEmpty()) {
-                    item {
-                        Text(
-                            text = voiceChannelsHeader,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = colors.textSecondary,
-                        )
-                    }
-                    items(voiceChannels, key = { it.id }) { channel ->
-                        val category = selectedSpace.categories.firstOrNull { it.id == channel.categoryId }
-                        val userIds = snapshot.voiceStates[channel.id].orEmpty()
-                        val isCurrent = voiceState.channelId == channel.id
-
-                        AetherSurfaceCard(
-                            modifier = Modifier.clickable(enabled = canConnect) {
-                                onJoinVoiceChannel(selectedSpace, category, channel)
-                            },
-                        ) {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(treeItems, key = { it.stableKey }) { item ->
+                    when (item) {
+                        is SpaceTreeItem.CategoryHeader -> {
+                            val collapsed = collapsedCategories[item.category.id] == true
+                            val indent = (item.depth * 14).dp
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { collapsedCategories[item.category.id] = !collapsed }
+                                    .padding(start = indent, top = 8.dp, bottom = 2.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                                        contentDescription = null,
-                                        tint = if (isCurrent) colors.accentMint else colors.accentPrimary,
-                                    )
-                                    Spacer(Modifier.width(10.dp))
-                                    Column {
-                                        Text(
-                                            text = channel.name,
-                                            style = MaterialTheme.typography.titleMedium,
-                                            color = colors.textPrimary,
-                                        )
-                                        if (category != null) {
-                                            Text(
-                                                text = category.name,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = colors.textTertiary,
-                                            )
-                                        }
-                                    }
-                                }
+                                Icon(
+                                    imageVector = if (collapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess,
+                                    contentDescription = null,
+                                    tint = colors.textTertiary,
+                                )
+                                Spacer(Modifier.width(4.dp))
                                 Text(
-                                    text = "${userIds.size}",
-                                    style = MaterialTheme.typography.labelLarge,
+                                    text = item.category.name.uppercase(),
+                                    style = MaterialTheme.typography.labelMedium,
                                     color = colors.textSecondary,
                                 )
                             }
                         }
-                    }
-                }
 
-                if (textChannels.isNotEmpty()) {
-                    item {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = textChannelsHeader,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = colors.textSecondary,
-                        )
-                    }
-                    items(textChannels, key = { it.id }) { channel ->
-                        val category = selectedSpace.categories.firstOrNull { it.id == channel.categoryId }
-                        AetherSurfaceCard(
-                            modifier = Modifier.clickable { onOpenTextChannel(channel) },
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Tag,
-                                    contentDescription = null,
-                                    tint = colors.textSecondary,
-                                )
-                                Spacer(Modifier.width(10.dp))
-                                Column {
-                                    Text(
-                                        text = channel.name,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = colors.textPrimary,
-                                    )
-                                    if (category != null) {
-                                        Text(
-                                            text = category.name,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = colors.textTertiary,
-                                        )
+                        is SpaceTreeItem.ChannelRow -> {
+                            val isHidden = item.category?.let { collapsedCategories[it.id] == true } == true
+                            if (!isHidden) {
+                                val indent = (item.depth * 10).dp
+                                val ch = item.channel
+                                if (ch.isVoice) {
+                                    val userIds = snapshot.voiceStates[ch.id].orEmpty()
+                                    val isCurrent = voiceState.channelId == ch.id
+                                    AetherSurfaceCard(
+                                        modifier = Modifier
+                                            .padding(start = indent)
+                                            .clickable(enabled = canConnect) {
+                                                onJoinVoiceChannel(selectedSpace, item.category, ch)
+                                            },
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(
+                                                    imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                                                    contentDescription = null,
+                                                    tint = if (isCurrent) colors.accentMint else colors.accentPrimary,
+                                                )
+                                                Spacer(Modifier.width(10.dp))
+                                                Text(
+                                                    text = ch.name,
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    color = colors.textPrimary,
+                                                )
+                                            }
+                                            if (userIds.isNotEmpty()) {
+                                                Text(
+                                                    text = "${userIds.size}",
+                                                    style = MaterialTheme.typography.labelLarge,
+                                                    color = colors.accentMint,
+                                                )
+                                            }
+                                        }
+                                        if (userIds.isNotEmpty()) {
+                                            Spacer(Modifier.height(6.dp))
+                                            val names = userIds.map { uid -> memberById[uid]?.label ?: uid }
+                                            Text(
+                                                text = names.joinToString(", "),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = colors.textSecondary,
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    AetherSurfaceCard(
+                                        modifier = Modifier
+                                            .padding(start = indent)
+                                            .clickable { onOpenTextChannel(ch) },
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Default.Tag,
+                                                contentDescription = null,
+                                                tint = colors.textSecondary,
+                                            )
+                                            Spacer(Modifier.width(10.dp))
+                                            Text(
+                                                text = ch.name,
+                                                style = MaterialTheme.typography.titleMedium,
+                                                color = colors.textPrimary,
+                                            )
+                                        }
                                     }
                                 }
                             }

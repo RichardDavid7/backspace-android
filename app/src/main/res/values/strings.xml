@@ -17,6 +17,8 @@
     <string name="voice_stereo">Stereo audio</string>
     <string name="voice_bitrate_auto">Auto bitrate</string>
     <string name="voice_idle_suspend">Suspend idle audio</string>
+    <string name="voice_hide_non_video">Hide non-video participants</string>
+    <string name="voice_screen_share_badge">Screen</string>
     <string name="chat_message_placeholder">Write a message...</string>
     <string name="chat_empty">No messages yet.</string>
     <string name="soundboard_title">Soundboard</string>
@@ -29,6 +31,11 @@
     <string name="status_dnd">Do Not Disturb</string>
     <string name="status_custom_placeholder">Custom status...</string>
     <string name="status_revert_timer">Auto-revert after</string>
+    <string name="settings_title">Settings</string>
+    <string name="settings_account">Account</string>
+    <string name="settings_video">Video</string>
+    <string name="settings_check_updates">Check for updates</string>
+    <string name="settings_logout">Log out</string>
     <string name="common_save">Save</string>
     <string name="common_cancel">Cancel</string>
     <string name="updater_repo_slug" translatable="false"></string>

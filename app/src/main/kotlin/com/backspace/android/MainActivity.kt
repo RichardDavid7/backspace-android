@@ -2,13 +2,16 @@ package com.backspace.android
 
 import android.Manifest
 import android.content.Intent
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -28,6 +31,7 @@ import com.backspace.core.designsystem.BackspaceAetherTheme
 import com.backspace.core.network.StoredSession
 import com.backspace.feature.auth.AuthScreen
 import com.backspace.feature.chat.ChatChannelScreen
+import com.backspace.feature.settings.SettingsScreen
 import com.backspace.feature.soundboard.SoundboardScreen
 import com.backspace.feature.spaces.SpacesScreen
 import com.backspace.feature.voice.VoiceRoomScreen
@@ -35,6 +39,10 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+        )
         super.onCreate(savedInstanceState)
         val container = (application as BackspaceApplication).container
 
@@ -60,6 +68,7 @@ private fun BackspaceRootApp(container: AppContainer) {
     LaunchedEffect(Unit) {
         val perms = buildList {
             add(Manifest.permission.RECORD_AUDIO)
+            add(Manifest.permission.CAMERA)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 add(Manifest.permission.BLUETOOTH_CONNECT)
             }
@@ -105,8 +114,6 @@ private fun BackspaceRootApp(container: AppContainer) {
                 wsClient = container.wsClient,
                 voiceEngine = container.voiceEngine,
                 spacesTitle = stringResource(R.string.spaces_title),
-                textChannelsHeader = stringResource(R.string.spaces_text_channels),
-                voiceChannelsHeader = stringResource(R.string.spaces_voice_channels),
                 noSpacesText = stringResource(R.string.spaces_empty),
                 activeVoiceBannerPrefix = stringResource(R.string.voice_connected_banner),
                 statusPickerTitle = stringResource(R.string.status_picker_title),
@@ -133,12 +140,37 @@ private fun BackspaceRootApp(container: AppContainer) {
                     navController.navigate("voice")
                 },
                 onOpenActiveVoice = { navController.navigate("voice") },
+                onOpenSettings = { navController.navigate("settings") },
+            )
+        }
+
+        composable("settings") {
+            val active = session
+            val currentUserLabel = container.wsClient.snapshot.value.currentUser?.label ?: "-"
+            SettingsScreen(
+                instanceUrl = active?.instanceUrl ?: "-",
+                username = currentUserLabel,
+                appVersion = "0.3.0-alpha",
+                voiceEngine = container.voiceEngine,
+                title = stringResource(R.string.settings_title),
+                accountHeader = stringResource(R.string.settings_account),
+                audioHeader = stringResource(R.string.voice_opus_title),
+                videoHeader = stringResource(R.string.settings_video),
+                voiceModeLabel = stringResource(R.string.voice_mode_voice),
+                musicModeLabel = stringResource(R.string.voice_mode_music),
+                stereoLabel = stringResource(R.string.voice_stereo),
+                autoBitrateLabel = stringResource(R.string.voice_bitrate_auto),
+                idleSuspendLabel = stringResource(R.string.voice_idle_suspend),
+                soundboardVolumeLabel = stringResource(R.string.soundboard_volume),
+                hideNonVideoLabel = stringResource(R.string.voice_hide_non_video),
+                checkUpdatesLabel = stringResource(R.string.settings_check_updates),
+                logoutLabel = stringResource(R.string.settings_logout),
                 onCheckUpdates = {
                     scope.launch {
                         val repoSlug = context.getString(R.string.updater_repo_slug)
                         val result = container.releaseUpdater.checkLatestRelease(
                             repoSlug = repoSlug,
-                            currentVersion = "0.2.0-alpha",
+                            currentVersion = "0.3.0-alpha",
                         )
                         if (result != null && result.updateAvailable && result.downloadUrl.isNotBlank()) {
                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(result.downloadUrl)))
@@ -156,6 +188,7 @@ private fun BackspaceRootApp(container: AppContainer) {
                         popUpTo("spaces") { inclusive = true }
                     }
                 },
+                onBack = { navController.popBackStack() },
             )
         }
 
@@ -193,6 +226,8 @@ private fun BackspaceRootApp(container: AppContainer) {
                 stereoLabel = stringResource(R.string.voice_stereo),
                 autoBitrateLabel = stringResource(R.string.voice_bitrate_auto),
                 idleSuspendLabel = stringResource(R.string.voice_idle_suspend),
+                hideNonVideoLabel = stringResource(R.string.voice_hide_non_video),
+                screenShareBadge = stringResource(R.string.voice_screen_share_badge),
                 onOpenSoundboard = activeSpaceId?.let { spaceId ->
                     { navController.navigate("soundboard/$spaceId") }
                 },

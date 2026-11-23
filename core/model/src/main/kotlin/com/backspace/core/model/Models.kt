@@ -57,8 +57,10 @@ data class Space(
 data class ChannelCategory(
     val id: String,
     val spaceId: String = "",
+    val parentId: String? = null,
     val name: String,
     val position: Int = 0,
+    val isPrivate: Boolean = false,
     // Optional Opus overrides
     val audioBitrateKbps: Int? = null,
     val maxAudioBitrateKbps: Int? = null,
@@ -75,6 +77,7 @@ data class Channel(
     val type: String = "text", // "text" | "voice"
     val position: Int = 0,
     val topic: String? = null,
+    val isPrivate: Boolean = false,
     // Optional Opus overrides
     val audioBitrateKbps: Int? = null,
     val maxAudioBitrateKbps: Int? = null,
@@ -139,6 +142,7 @@ data class UserAudioPreferences(
     val manualBitrateKbps: Int = 64,
     val idleSuspendEnabled: Boolean = true,
     val idleSuspendTimeoutSeconds: Int = 60,
+    val hideNonVideoParticipants: Boolean = false,
 )
 
 data class ResolvedAudioPolicy(

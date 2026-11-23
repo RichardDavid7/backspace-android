@@ -17,6 +17,8 @@
     <string name="voice_stereo">立体声</string>
     <string name="voice_bitrate_auto">自动比特率</string>
     <string name="voice_idle_suspend">空闲时暂停音频</string>
+    <string name="voice_hide_non_video">隐藏无视频参与者</string>
+    <string name="voice_screen_share_badge">屏幕</string>
     <string name="chat_message_placeholder">输入消息...</string>
     <string name="chat_empty">暂无消息。</string>
     <string name="soundboard_title">音效板</string>
@@ -29,6 +31,11 @@
     <string name="status_dnd">请勿打扰</string>
     <string name="status_custom_placeholder">自定义状态...</string>
     <string name="status_revert_timer">自动恢复时间</string>
+    <string name="settings_title">设置</string>
+    <string name="settings_account">账户</string>
+    <string name="settings_video">视频</string>
+    <string name="settings_check_updates">检查更新</string>
+    <string name="settings_logout">退出登录</string>
     <string name="common_save">保存</string>
     <string name="common_cancel">取消</string>
     <string name="updater_repo_slug" translatable="false"></string>

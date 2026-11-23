@@ -23,6 +23,7 @@ object VoiceServiceActions {
     const val EXTRA_SPACE_NAME = "extra_space_name"
     const val EXTRA_IS_MUTED = "extra_is_muted"
     const val EXTRA_IS_DEAFENED = "extra_is_deafened"
+    const val EXTRA_IS_SCREEN_SHARING = "extra_is_screen_sharing"
     const val EXTRA_BITRATE_KBPS = "extra_bitrate_kbps"
 }
 
@@ -68,6 +69,7 @@ class VoiceForegroundService : Service() {
         val spaceName = intent?.getStringExtra(VoiceServiceActions.EXTRA_SPACE_NAME) ?: "Backspace"
         val isMuted = intent?.getBooleanExtra(VoiceServiceActions.EXTRA_IS_MUTED, false) ?: false
         val isDeafened = intent?.getBooleanExtra(VoiceServiceActions.EXTRA_IS_DEAFENED, false) ?: false
+        val isScreenSharing = intent?.getBooleanExtra(VoiceServiceActions.EXTRA_IS_SCREEN_SHARING, false) ?: false
         val bitrateKbps = intent?.getIntExtra(VoiceServiceActions.EXTRA_BITRATE_KBPS, 64) ?: 64
 
         val notification = buildNotification(
@@ -79,11 +81,12 @@ class VoiceForegroundService : Service() {
         )
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
-            )
+            var serviceTypes = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            if (isScreenSharing && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                serviceTypes = serviceTypes or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+            }
+            startForeground(NOTIFICATION_ID, notification, serviceTypes)
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
@@ -174,6 +177,7 @@ class VoiceForegroundService : Service() {
             isMuted: Boolean,
             isDeafened: Boolean,
             bitrateKbps: Int,
+            isScreenSharing: Boolean = false,
         ) {
             val intent = Intent(context, VoiceForegroundService::class.java).apply {
                 action = VoiceServiceActions.ACTION_UPDATE
@@ -181,6 +185,7 @@ class VoiceForegroundService : Service() {
                 putExtra(VoiceServiceActions.EXTRA_CHANNEL_NAME, channelName)
                 putExtra(VoiceServiceActions.EXTRA_IS_MUTED, isMuted)
                 putExtra(VoiceServiceActions.EXTRA_IS_DEAFENED, isDeafened)
+                putExtra(VoiceServiceActions.EXTRA_IS_SCREEN_SHARING, isScreenSharing)
                 putExtra(VoiceServiceActions.EXTRA_BITRATE_KBPS, bitrateKbps)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
