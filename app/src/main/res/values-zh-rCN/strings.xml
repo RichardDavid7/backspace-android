@@ -19,6 +19,11 @@
     <string name="voice_idle_suspend">空闲时暂停音频</string>
     <string name="voice_hide_non_video">隐藏无视频参与者</string>
     <string name="voice_screen_share_badge">屏幕</string>
+    <string name="voice_user_volume">用户音量</string>
+    <string name="voice_local_mute">仅对自己静音</string>
+    <string name="voice_space_mute">在空间中静音</string>
+    <string name="voice_space_deafen">在空间中拒听</string>
+    <string name="voice_disconnect_user">断开通话</string>
     <string name="chat_message_placeholder">输入消息...</string>
     <string name="chat_empty">暂无消息。</string>
     <string name="chat_queued_offline">已排队 · 等待重新连接...</string>

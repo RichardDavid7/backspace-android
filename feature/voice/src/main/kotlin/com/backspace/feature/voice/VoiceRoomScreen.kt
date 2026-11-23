@@ -40,14 +40,17 @@ import androidx.compose.material.icons.filled.ScreenShare
 import androidx.compose.material.icons.filled.StopScreenShare
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VideocamOff
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -70,6 +73,7 @@ import com.backspace.core.designsystem.AetherTheme
 import com.backspace.core.model.AudioMode
 import com.backspace.core.model.AudioOutputRoute
 import com.backspace.core.voice.BackspaceVoiceEngine
+import com.backspace.core.voice.VoiceParticipantUi
 import com.backspace.core.voice.VoiceVideoTile
 import io.livekit.android.renderer.TextureViewRenderer
 import livekit.org.webrtc.RendererCommon
@@ -86,6 +90,12 @@ fun VoiceRoomScreen(
     idleSuspendLabel: String,
     hideNonVideoLabel: String,
     screenShareBadge: String,
+    userVolumeLabel: String,
+    localMuteLabel: String,
+    spaceMuteLabel: String,
+    spaceDeafenLabel: String,
+    disconnectUserLabel: String,
+    canModerateVoice: Boolean = false,
     onOpenSoundboard: (() -> Unit)? = null,
     onBack: () -> Unit,
 ) {
@@ -96,6 +106,7 @@ fun VoiceRoomScreen(
     val policy = state.effectiveAudio.policy
     var fullscreenTileId by remember { mutableStateOf<String?>(null) }
     var isLandscapeForced by remember { mutableStateOf(false) }
+    var selectedParticipant by remember { mutableStateOf<VoiceParticipantUi?>(null) }
 
     val screenCaptureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
@@ -167,6 +178,77 @@ fun VoiceRoomScreen(
             }
         }
         return
+    }
+
+    // Menu de opções do participante (equivalente ao botão direito no PC)
+    selectedParticipant?.let { participant ->
+        val currentVol = state.participantVolumes[participant.userId] ?: 1.0f
+        val isLocallyMuted = state.localMutedUsers.contains(participant.userId)
+
+        AlertDialog(
+            onDismissRequest = { selectedParticipant = null },
+            containerColor = colors.bgChannel,
+            title = { Text(participant.username, color = colors.textPrimary) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "$userVolumeLabel: ${(currentVol * 100).toInt()}%",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textSecondary,
+                    )
+                    AetherPurpleSlider(
+                        value = currentVol,
+                        onValueChange = { v -> voiceEngine.setParticipantVolume(participant.userId, v) },
+                        valueRange = 0f..2f,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(localMuteLabel, color = colors.textPrimary)
+                        Switch(
+                            checked = isLocallyMuted,
+                            onCheckedChange = { voiceEngine.toggleLocalMuteParticipant(participant.userId) },
+                        )
+                    }
+                    if (canModerateVoice && state.spaceId != null) {
+                        OutlinedButton(
+                            onClick = {
+                                voiceEngine.moderateSpaceMute(participant.userId, !participant.isMuted)
+                                selectedParticipant = null
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(spaceMuteLabel, color = colors.accentAmber)
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                voiceEngine.moderateSpaceDeafen(participant.userId, true)
+                                selectedParticipant = null
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(spaceDeafenLabel, color = colors.accentAmber)
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                voiceEngine.moderateDisconnect(participant.userId)
+                                selectedParticipant = null
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(disconnectUserLabel, color = colors.accentPeach)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { selectedParticipant = null }) {
+                    Text("OK", color = colors.accentPrimary)
+                }
+            },
+        )
     }
 
     Scaffold(
@@ -347,10 +429,13 @@ fun VoiceRoomScreen(
             if (visibleParticipants.isNotEmpty()) {
                 AetherSurfaceCard {
                     visibleParticipants.forEach { p ->
+                        val localMuted = state.localMutedUsers.contains(p.userId)
+                        val volPct = ((state.participantVolumes[p.userId] ?: 1.0f) * 100).toInt()
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 6.dp),
+                                .clickable(enabled = !p.isLocal) { selectedParticipant = p }
+                                .padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
@@ -362,12 +447,24 @@ fun VoiceRoomScreen(
                                     color = if (p.isSpeaking) colors.accentMint else colors.textPrimary,
                                 )
                             }
-                            if (p.isMuted) {
-                                Icon(
-                                    imageVector = Icons.Default.MicOff,
-                                    contentDescription = null,
-                                    tint = colors.accentPeach,
-                                )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                if (!p.isLocal && (localMuted || volPct != 100)) {
+                                    Text(
+                                        text = if (localMuted) "0%" else "$volPct%",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (localMuted) colors.accentPeach else colors.accentSky,
+                                    )
+                                }
+                                if (p.isMuted) {
+                                    Icon(
+                                        imageVector = Icons.Default.MicOff,
+                                        contentDescription = null,
+                                        tint = colors.accentPeach,
+                                    )
+                                }
                             }
                         }
                     }

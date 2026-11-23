@@ -89,6 +89,8 @@ data class VoiceSessionState(
     ),
     val participants: List<VoiceParticipantUi> = emptyList(),
     val videoTiles: List<VoiceVideoTile> = emptyList(),
+    val participantVolumes: Map<String, Float> = emptyMap(),
+    val localMutedUsers: Set<String> = emptySet(),
     val telemetry: VoiceTelemetry = VoiceTelemetry(),
     val soundboardVolume: Float = 0.8f,
     val lastSoundboardEvent: String? = null,
@@ -423,6 +425,41 @@ class BackspaceVoiceEngine(
         _state.update { it.copy(soundboardVolume = volume.coerceIn(0f, 1f)) }
     }
 
+    fun setParticipantVolume(userId: String, volume: Float) {
+        val clamped = volume.coerceIn(0f, 2f)
+        _state.update { cur ->
+            cur.copy(participantVolumes = cur.participantVolumes + (userId to clamped))
+        }
+        room?.let { applyRemoteAudioVolume(it, muted = _state.value.isDeafened) }
+    }
+
+    fun toggleLocalMuteParticipant(userId: String) {
+        _state.update { cur ->
+            val next = if (cur.localMutedUsers.contains(userId)) {
+                cur.localMutedUsers - userId
+            } else {
+                cur.localMutedUsers + userId
+            }
+            cur.copy(localMutedUsers = next)
+        }
+        room?.let { applyRemoteAudioVolume(it, muted = _state.value.isDeafened) }
+    }
+
+    fun moderateSpaceMute(targetUserId: String, muted: Boolean) {
+        val spaceId = _state.value.spaceId ?: return
+        wsClient.sendVoiceSpaceMute(spaceId, targetUserId, muted)
+    }
+
+    fun moderateSpaceDeafen(targetUserId: String, deafened: Boolean) {
+        val spaceId = _state.value.spaceId ?: return
+        wsClient.sendVoiceSpaceDeafen(spaceId, targetUserId, deafened)
+    }
+
+    fun moderateDisconnect(targetUserId: String) {
+        val spaceId = _state.value.spaceId ?: return
+        wsClient.sendVoiceDisconnect(spaceId, targetUserId)
+    }
+
     fun playSoundboardSound(sound: SoundboardSound) {
         scope.launch {
             val lkRoom = room ?: return@launch
@@ -568,8 +605,10 @@ class BackspaceVoiceEngine(
                         scheduleIdleSuspendCheck()
                     }
                     is RoomEvent.TrackSubscribed -> {
-                        if (_state.value.isDeafened && event.track is RemoteAudioTrack) {
-                            (event.track as RemoteAudioTrack).setVolume(0.0)
+                        if (event.track is RemoteAudioTrack) {
+                            val remoteUserId = (event.participant.identity?.value ?: "").split(":").firstOrNull().orEmpty()
+                            val effectiveVol = computeRemoteVolume(remoteUserId, deafened = _state.value.isDeafened)
+                            (event.track as RemoteAudioTrack).setVolume(effectiveVol)
                         }
                         refreshParticipants(lkRoom)
                     }
@@ -770,9 +809,16 @@ class BackspaceVoiceEngine(
         }
     }
 
+    private fun computeRemoteVolume(userId: String, deafened: Boolean): Double {
+        if (deafened) return 0.0
+        if (_state.value.localMutedUsers.contains(userId)) return 0.0
+        return (_state.value.participantVolumes[userId] ?: 1.0f).toDouble()
+    }
+
     private fun applyRemoteAudioVolume(lkRoom: Room, muted: Boolean) {
-        val vol = if (muted) 0.0 else 1.0
         lkRoom.remoteParticipants.values.forEach { remote ->
+            val uid = (remote.identity?.value ?: "").split(":").firstOrNull().orEmpty()
+            val vol = computeRemoteVolume(uid, deafened = muted)
             remote.audioTrackPublications.forEach { (_, track) ->
                 (track as? RemoteAudioTrack)?.setVolume(vol)
             }

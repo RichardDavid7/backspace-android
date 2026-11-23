@@ -19,6 +19,11 @@
     <string name="voice_idle_suspend">Inaktives Audio pausieren</string>
     <string name="voice_hide_non_video">Teilnehmer ohne Video ausblenden</string>
     <string name="voice_screen_share_badge">Bildschirm</string>
+    <string name="voice_user_volume">Benutzerlautstärke</string>
+    <string name="voice_local_mute">Lokal stummschalten</string>
+    <string name="voice_space_mute">Im Space stummschalten</string>
+    <string name="voice_space_deafen">Im Space taubschalten</string>
+    <string name="voice_disconnect_user">Aus Anruf trennen</string>
     <string name="chat_message_placeholder">Nachricht schreiben...</string>
     <string name="chat_empty">Noch keine Nachrichten.</string>
     <string name="chat_queued_offline">In Warteschlange · warte auf Verbindung...</string>

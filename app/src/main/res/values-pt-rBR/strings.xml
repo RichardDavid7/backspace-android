@@ -19,6 +19,11 @@
     <string name="voice_idle_suspend">Suspender áudio ocioso</string>
     <string name="voice_hide_non_video">Ocultar participantes sem vídeo</string>
     <string name="voice_screen_share_badge">Tela</string>
+    <string name="voice_user_volume">Volume do usuário</string>
+    <string name="voice_local_mute">Mutar só para mim</string>
+    <string name="voice_space_mute">Silenciar no Espaço</string>
+    <string name="voice_space_deafen">Ensurdecer no Espaço</string>
+    <string name="voice_disconnect_user">Desconectar da chamada</string>
     <string name="chat_message_placeholder">Escreva uma mensagem...</string>
     <string name="chat_empty">Nenhuma mensagem ainda.</string>
     <string name="chat_queued_offline">Na fila · aguardando conexão...</string>

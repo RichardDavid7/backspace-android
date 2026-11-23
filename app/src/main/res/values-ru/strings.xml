@@ -19,6 +19,11 @@
     <string name="voice_idle_suspend">Приостанавливать неактивный звук</string>
     <string name="voice_hide_non_video">Скрыть участников без видео</string>
     <string name="voice_screen_share_badge">Экран</string>
+    <string name="voice_user_volume">Громкость пользователя</string>
+    <string name="voice_local_mute">Заглушить для себя</string>
+    <string name="voice_space_mute">Заглушить в пространстве</string>
+    <string name="voice_space_deafen">Отключить звук в пространстве</string>
+    <string name="voice_disconnect_user">Отключить от звонка</string>
     <string name="chat_message_placeholder">Напишите сообщение...</string>
     <string name="chat_empty">Сообщений пока нет.</string>
     <string name="chat_queued_offline">В очереди · ожидание подключения...</string>

@@ -19,6 +19,11 @@
     <string name="voice_idle_suspend">Suspend idle audio</string>
     <string name="voice_hide_non_video">Hide non-video participants</string>
     <string name="voice_screen_share_badge">Screen</string>
+    <string name="voice_user_volume">User volume</string>
+    <string name="voice_local_mute">Local mute</string>
+    <string name="voice_space_mute">Mute in Space</string>
+    <string name="voice_space_deafen">Deafen in Space</string>
+    <string name="voice_disconnect_user">Disconnect from call</string>
     <string name="chat_message_placeholder">Write a message...</string>
     <string name="chat_empty">No messages yet.</string>
     <string name="chat_queued_offline">Queued · waiting for connection...</string>

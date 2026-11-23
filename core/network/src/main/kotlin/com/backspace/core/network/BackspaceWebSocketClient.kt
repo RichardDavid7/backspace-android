@@ -148,6 +148,38 @@ class BackspaceWebSocketClient(
         )
     }
 
+    fun sendVoiceSpaceMute(spaceId: String, targetUserId: String, muted: Boolean) {
+        sendJson(
+            buildJsonObject {
+                put("type", "voice_space_mute")
+                put("spaceId", spaceId)
+                put("targetUserId", targetUserId)
+                put("muted", muted)
+            },
+        )
+    }
+
+    fun sendVoiceSpaceDeafen(spaceId: String, targetUserId: String, deafened: Boolean) {
+        sendJson(
+            buildJsonObject {
+                put("type", "voice_space_deafen")
+                put("spaceId", spaceId)
+                put("targetUserId", targetUserId)
+                put("deafened", deafened)
+            },
+        )
+    }
+
+    fun sendVoiceDisconnect(spaceId: String, targetUserId: String) {
+        sendJson(
+            buildJsonObject {
+                put("type", "voice_disconnect")
+                put("spaceId", spaceId)
+                put("targetUserId", targetUserId)
+            },
+        )
+    }
+
     /**
      * Atualiza status e opcionalmente agenda reversão automática para o status anterior.
      */

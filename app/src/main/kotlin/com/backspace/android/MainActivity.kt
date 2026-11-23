@@ -28,6 +28,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.backspace.core.designsystem.BackspaceAetherTheme
+import com.backspace.core.model.PermissionBits
 import com.backspace.core.network.StoredSession
 import com.backspace.feature.auth.AuthScreen
 import com.backspace.feature.chat.ChatChannelScreen
@@ -297,6 +298,12 @@ private fun BackspaceRootApp(container: AppContainer) {
 
         composable("voice") {
             val activeSpaceId = container.voiceEngine.state.value.spaceId
+            val activeSpace = container.wsClient.snapshot.value.spaces.firstOrNull { it.id == activeSpaceId }
+            val canMod = activeSpace != null && (
+                PermissionBits.hasPermission(activeSpace.myPermissions, PermissionBits.MUTE_MEMBERS) ||
+                    PermissionBits.hasPermission(activeSpace.myPermissions, PermissionBits.DEAFEN_MEMBERS) ||
+                    PermissionBits.hasPermission(activeSpace.myPermissions, PermissionBits.DISCONNECT_MEMBERS)
+                )
             VoiceRoomScreen(
                 voiceEngine = container.voiceEngine,
                 opusTitle = stringResource(R.string.voice_opus_title),
@@ -308,6 +315,12 @@ private fun BackspaceRootApp(container: AppContainer) {
                 idleSuspendLabel = stringResource(R.string.voice_idle_suspend),
                 hideNonVideoLabel = stringResource(R.string.voice_hide_non_video),
                 screenShareBadge = stringResource(R.string.voice_screen_share_badge),
+                userVolumeLabel = stringResource(R.string.voice_user_volume),
+                localMuteLabel = stringResource(R.string.voice_local_mute),
+                spaceMuteLabel = stringResource(R.string.voice_space_mute),
+                spaceDeafenLabel = stringResource(R.string.voice_space_deafen),
+                disconnectUserLabel = stringResource(R.string.voice_disconnect_user),
+                canModerateVoice = canMod,
                 onOpenSoundboard = activeSpaceId?.let { spaceId ->
                     { navController.navigate("soundboard/$spaceId") }
                 },
