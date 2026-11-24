@@ -7,6 +7,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -88,6 +89,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -99,8 +101,10 @@ import com.backspace.core.designsystem.AetherTheme
 import com.backspace.core.model.GifItem
 import com.backspace.core.model.Message
 import com.backspace.core.model.PendingAttachmentPayload
+import com.backspace.core.model.Role
 import com.backspace.core.model.StickerItem
 import com.backspace.core.model.StickerTokenParser
+import com.backspace.core.model.User
 import com.backspace.core.network.BackspaceRestClient
 import com.backspace.core.network.BackspaceWebSocketClient
 import kotlinx.coroutines.Dispatchers
@@ -118,6 +122,12 @@ private val PICKER_EMOJIS = listOf(
     "👍", "👎", "👏", "🙌", "🤝", "🙏", "💪", "✌️",
     "❤️", "🔥", "⭐", "⚡", "🎉", "💯", "🎮", "🎧",
     "🚀", "👀", "💀", "🤡", "🫡", "🫶", "✅", "❌",
+)
+
+private data class ChatProfileTarget(
+    val user: User,
+    val roles: List<Role> = emptyList(),
+    val nickname: String? = null,
 )
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
@@ -140,6 +150,7 @@ fun ChatChannelScreen(
     callConfirmAction: String = "Call",
     cancelLabel: String = "Cancel",
     onStartCall: (() -> Unit)? = null,
+    onOpenDm: ((dmId: String, dmTitle: String) -> Unit)? = null,
     onBack: () -> Unit,
 ) {
     val colors = AetherTheme.colors
@@ -175,6 +186,8 @@ fun ChatChannelScreen(
     var editingMessage by remember { mutableStateOf<Message?>(null) }
     var selectedMessageForActions by remember { mutableStateOf<Message?>(null) }
     var messagePendingDelete by remember { mutableStateOf<Message?>(null) }
+    var selectedProfileTarget by remember { mutableStateOf<ChatProfileTarget?>(null) }
+    var openingProfileDm by remember { mutableStateOf(false) }
     var fullscreenImageUrl by remember { mutableStateOf<String?>(null) }
     var showCallConfirmDialog by remember { mutableStateOf(false) }
     var showMediaPicker by remember { mutableStateOf(false) }
@@ -401,6 +414,242 @@ fun ChatChannelScreen(
             dismissButton = {
                 TextButton(onClick = { showCallConfirmDialog = false }) {
                     Text(cancelLabel, color = colors.textSecondary)
+                }
+            },
+        )
+    }
+
+    val currentDm = remember(snapshot.dmChannels, channelId, isDm) {
+        if (isDm) snapshot.dmChannels.firstOrNull { it.id == channelId } else null
+    }
+
+    fun resolveProfileTarget(msg: Message): ChatProfileTarget? {
+        val uid = msg.user?.id?.takeIf { it.isNotBlank() }
+            ?: msg.userId.takeIf { it.isNotBlank() }
+            ?: return null
+        val spaceMember = currentSpace?.members?.firstOrNull { it.userId == uid || it.user?.id == uid }
+            ?: snapshot.spaces.asSequence()
+                .flatMap { it.members.asSequence() }
+                .firstOrNull { it.userId == uid || it.user?.id == uid }
+        val dmMember = currentDm?.members?.firstOrNull { it.id == uid }
+            ?: snapshot.dmChannels.asSequence()
+                .flatMap { it.members.asSequence() }
+                .firstOrNull { it.id == uid }
+        val resolvedUser = spaceMember?.user
+            ?: dmMember
+            ?: (if (uid == myUserId) snapshot.currentUser else null)
+            ?: msg.user
+            ?: User(
+                id = uid,
+                username = msg.authorLabel,
+                displayName = msg.authorLabel,
+            )
+        val memberRoles = if (currentSpace != null && spaceMember != null && currentSpace.members.any { it.userId == spaceMember.userId }) {
+            spaceMember.roles.filter { !it.isEveryone }.sortedByDescending { it.position }
+        } else {
+            emptyList()
+        }
+        return ChatProfileTarget(
+            user = resolvedUser,
+            roles = memberRoles,
+            nickname = if (currentSpace != null) spaceMember?.nickname else null,
+        )
+    }
+
+    // Diálogo de Perfil do Usuário (ao tocar no avatar ou nome do autor)
+    selectedProfileTarget?.let { target ->
+        val profileUser = target.user
+        val displayTitle = target.nickname?.takeIf { it.isNotBlank() } ?: profileUser.label
+        val bannerUrl = profileUser.bannerUrl(instanceUrl)
+        val bannerAccentColor = remember(profileUser.accentColor, colors.accentPrimary) {
+            profileUser.accentColor
+                ?.takeIf { it.isNotBlank() }
+                ?.let { hex -> runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrNull() }
+                ?: colors.accentPrimary.copy(alpha = 0.35f)
+        }
+        val isCurrentOneToOneDm = isDm &&
+            currentDm != null &&
+            !currentDm.isGroup &&
+            currentDm.members.any { it.id == profileUser.id }
+        val canSendDm = onOpenDm != null &&
+            profileUser.id.isNotBlank() &&
+            profileUser.id != myUserId &&
+            !isCurrentOneToOneDm
+
+        AlertDialog(
+            onDismissRequest = {
+                if (!openingProfileDm) selectedProfileTarget = null
+            },
+            containerColor = colors.bgChannel,
+            title = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(64.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(bannerAccentColor),
+                    ) {
+                        if (!bannerUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(context)
+                                    .data(bannerUrl)
+                                    .addHeader("Authorization", "Bearer $jwtToken")
+                                    .crossfade(true)
+                                    .build(),
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        AetherAvatar(
+                            imageUrl = profileUser.avatarUrl(instanceUrl),
+                            fallbackLabel = displayTitle,
+                            size = 56.dp,
+                            status = profileUser.status,
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = displayTitle,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = colors.textPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = "@${profileUser.username}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.textSecondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (!profileUser.customStatus.isNullOrBlank()) {
+                        Surface(
+                            color = colors.bgElevated,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(
+                                text = profileUser.customStatus!!,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.textPrimary,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            )
+                        }
+                    }
+                    if (!profileUser.bio.isNullOrBlank()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = "SOBRE",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.textTertiary,
+                            )
+                            Text(
+                                text = profileUser.bio!!,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.textSecondary,
+                            )
+                        }
+                    }
+                    if (target.roles.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = "CARGOS",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.textTertiary,
+                            )
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                target.roles.forEach { role ->
+                                    val roleColor = role.color
+                                        .takeIf { it.isNotBlank() && it != "#000000" && it != "transparent" }
+                                        ?.let { hex -> runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrNull() }
+                                        ?: colors.accentPrimary
+                                    Surface(
+                                        color = roleColor.copy(alpha = 0.16f),
+                                        shape = RoundedCornerShape(999.dp),
+                                        border = BorderStroke(1.dp, roleColor.copy(alpha = 0.45f)),
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(7.dp)
+                                                    .clip(CircleShape)
+                                                    .background(roleColor),
+                                            )
+                                            Text(
+                                                text = role.name,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = colors.textPrimary,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (profileUser.customStatus.isNullOrBlank() && profileUser.bio.isNullOrBlank() && target.roles.isEmpty()) {
+                        Text(
+                            text = "Status: ${profileUser.status}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.textTertiary,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                if (canSendDm) {
+                    TextButton(
+                        enabled = !openingProfileDm,
+                        onClick = {
+                            openingProfileDm = true
+                            scope.launch {
+                                runCatching {
+                                    val dm = restClient.createOrOpenDm(instanceUrl, jwtToken, profileUser.id)
+                                    wsClient.addOrUpdateDmChannel(dm)
+                                    dm
+                                }.onSuccess { dm ->
+                                    openingProfileDm = false
+                                    selectedProfileTarget = null
+                                    onOpenDm?.invoke(dm.id, dm.displayTitle(myUserId))
+                                }.onFailure { err ->
+                                    openingProfileDm = false
+                                    errorText = err.message
+                                }
+                            }
+                        },
+                    ) {
+                        Text(
+                            text = if (openingProfileDm) "Abrindo..." else "Enviar mensagem (DM)",
+                            color = colors.accentPrimary,
+                        )
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !openingProfileDm,
+                    onClick = { selectedProfileTarget = null },
+                ) {
+                    Text("Fechar", color = colors.textSecondary)
                 }
             },
         )
@@ -714,7 +963,13 @@ fun ChatChannelScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { selectedProfileTarget = resolveProfileTarget(msg) }
+                                    .padding(end = 6.dp, top = 2.dp, bottom = 2.dp),
+                            ) {
                                 AetherAvatar(
                                     imageUrl = msg.user?.avatarUrl(instanceUrl),
                                     fallbackLabel = msg.authorLabel,

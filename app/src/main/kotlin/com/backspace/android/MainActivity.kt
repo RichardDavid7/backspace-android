@@ -19,7 +19,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Hub
@@ -304,9 +303,7 @@ private fun BackspaceRootApp(container: AppContainer) {
                     }
                 },
             ) { innerPadding ->
-                val tabModifier = Modifier
-                    .statusBarsPadding()
-                    .padding(innerPadding)
+                val tabModifier = Modifier.padding(innerPadding)
 
                 when (homeTab) {
                     0 -> DmListScreen(
@@ -437,6 +434,10 @@ private fun BackspaceRootApp(container: AppContainer) {
                     )
                     navController.navigate("voice")
                 },
+                onOpenDm = { targetDmId, targetDmTitle ->
+                    val encoded = Uri.encode(targetDmTitle)
+                    navController.navigate("dm/$targetDmId/$encoded")
+                },
                 onBack = { navController.popBackStack() },
             )
         }
@@ -464,6 +465,10 @@ private fun BackspaceRootApp(container: AppContainer) {
                 replyingToPrefix = stringResource(R.string.chat_replying_to),
                 replyActionLabel = stringResource(R.string.chat_action_reply),
                 deleteActionLabel = stringResource(R.string.chat_action_delete),
+                onOpenDm = { targetDmId, targetDmTitle ->
+                    val encoded = Uri.encode(targetDmTitle)
+                    navController.navigate("dm/$targetDmId/$encoded")
+                },
                 onBack = { navController.popBackStack() },
             )
         }

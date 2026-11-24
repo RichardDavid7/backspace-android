@@ -3,6 +3,7 @@ package com.backspace.feature.dm
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,6 +14,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -28,6 +31,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -40,6 +44,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.backspace.core.designsystem.AetherAvatar
@@ -48,6 +56,7 @@ import com.backspace.core.designsystem.AetherTheme
 import com.backspace.core.model.DmChannel
 import com.backspace.core.model.FriendItem
 import com.backspace.core.model.FriendRequestItem
+import com.backspace.core.model.User
 import com.backspace.core.network.BackspaceRestClient
 import com.backspace.core.network.BackspaceWebSocketClient
 import kotlinx.coroutines.launch
@@ -80,6 +89,8 @@ fun DmListScreen(
     var socialFeedback by remember { mutableStateOf<String?>(null) }
     var showCreateGroupDialog by remember { mutableStateOf(false) }
     var friendPendingRemove by remember { mutableStateOf<FriendItem?>(null) }
+    var selectedProfileUser by remember { mutableStateOf<User?>(null) }
+    var openingProfileDm by remember { mutableStateOf(false) }
 
     fun reloadSocial() {
         scope.launch {
@@ -193,6 +204,136 @@ fun DmListScreen(
         )
     }
 
+    selectedProfileUser?.let { profileUser ->
+        val bannerAccentColor = remember(profileUser.accentColor, colors.accentPrimary) {
+            profileUser.accentColor
+                ?.takeIf { it.isNotBlank() }
+                ?.let { hex -> runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrNull() }
+                ?: colors.accentPrimary.copy(alpha = 0.35f)
+        }
+        AlertDialog(
+            onDismissRequest = {
+                if (!openingProfileDm) selectedProfileUser = null
+            },
+            containerColor = colors.bgChannel,
+            title = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(bannerAccentColor),
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        AetherAvatar(
+                            imageUrl = profileUser.avatarUrl(instanceUrl),
+                            fallbackLabel = profileUser.label,
+                            size = 56.dp,
+                            status = profileUser.status,
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = profileUser.label,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = colors.textPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = "@${profileUser.username}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.textSecondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (!profileUser.customStatus.isNullOrBlank()) {
+                        Surface(
+                            color = colors.bgElevated,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(
+                                text = profileUser.customStatus!!,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.textPrimary,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            )
+                        }
+                    }
+                    if (!profileUser.bio.isNullOrBlank()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = "SOBRE",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.textTertiary,
+                            )
+                            Text(
+                                text = profileUser.bio!!,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.textSecondary,
+                            )
+                        }
+                    }
+                    if (profileUser.customStatus.isNullOrBlank() && profileUser.bio.isNullOrBlank()) {
+                        Text(
+                            text = "Status: ${profileUser.status}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.textTertiary,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                if (profileUser.id.isNotBlank() && profileUser.id != myUserId) {
+                    TextButton(
+                        enabled = !openingProfileDm,
+                        onClick = {
+                            openingProfileDm = true
+                            scope.launch {
+                                runCatching {
+                                    val dm = restClient.createOrOpenDm(instanceUrl, jwtToken, profileUser.id)
+                                    wsClient.addOrUpdateDmChannel(dm)
+                                    dm
+                                }.onSuccess { dm ->
+                                    openingProfileDm = false
+                                    selectedProfileUser = null
+                                    onOpenDm(dm)
+                                }.onFailure { err ->
+                                    openingProfileDm = false
+                                    socialFeedback = err.message
+                                }
+                            }
+                        },
+                    ) {
+                        Text(
+                            text = if (openingProfileDm) "Abrindo..." else "Abrir conversa",
+                            color = colors.accentPrimary,
+                        )
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !openingProfileDm,
+                    onClick = { selectedProfileUser = null },
+                ) {
+                    Text("Fechar", color = colors.textSecondary)
+                }
+            },
+        )
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -258,6 +399,13 @@ fun DmListScreen(
                                         fallbackLabel = dm.displayTitle(myUserId),
                                         size = 40.dp,
                                         status = if (dm.isGroup) null else other?.status,
+                                        modifier = if (!dm.isGroup && other != null) {
+                                            Modifier
+                                                .clip(CircleShape)
+                                                .clickable { selectedProfileUser = other }
+                                        } else {
+                                            Modifier
+                                        },
                                     )
                                     Spacer(Modifier.width(12.dp))
                                     Column(modifier = Modifier.weight(1f)) {
@@ -363,6 +511,13 @@ fun DmListScreen(
                                         imageUrl = req.user?.avatarUrl(instanceUrl),
                                         fallbackLabel = req.label,
                                         size = 34.dp,
+                                        modifier = if (req.user != null) {
+                                            Modifier
+                                                .clip(CircleShape)
+                                                .clickable { selectedProfileUser = req.user }
+                                        } else {
+                                            Modifier
+                                        },
                                     )
                                     Spacer(Modifier.width(10.dp))
                                     Text(req.label, color = colors.textPrimary)
@@ -417,6 +572,15 @@ fun DmListScreen(
                                     fallbackLabel = friend.label,
                                     size = 38.dp,
                                     status = friend.user?.status ?: "offline",
+                                    modifier = Modifier
+                                        .clip(CircleShape)
+                                        .clickable {
+                                            selectedProfileUser = friend.user ?: User(
+                                                id = friend.targetUserId,
+                                                username = friend.label,
+                                                displayName = friend.label,
+                                            )
+                                        },
                                 )
                                 Spacer(Modifier.width(10.dp))
                                 Column {

@@ -9,9 +9,11 @@ import com.backspace.core.model.AdminInvitesListResponse
 import com.backspace.core.model.AdminTelemetryStatus
 import com.backspace.core.model.AdminUserItem
 import com.backspace.core.model.AdminUsersPageResponse
+import com.backspace.core.model.CategoryLayoutItem
 import com.backspace.core.model.ChangePasswordResponse
 import com.backspace.core.model.Channel
 import com.backspace.core.model.ChannelCategory
+import com.backspace.core.model.ChannelLayoutItem
 import com.backspace.core.model.DmChannel
 import com.backspace.core.model.DmMessage
 import com.backspace.core.model.ExploreSpaceItem
@@ -35,20 +37,29 @@ import com.backspace.core.model.InstanceStreamingLimits
 import com.backspace.core.model.InstanceUpdateStatusResponse
 import com.backspace.core.model.InviteCodeExtractor
 import com.backspace.core.model.LiveKitTokenResponse
+import com.backspace.core.model.MemberWithUser
 import com.backspace.core.model.Message
 import com.backspace.core.model.MessageAttachment
+import com.backspace.core.model.OverridesResponse
+import com.backspace.core.model.PermissionOverrideItem
+import com.backspace.core.model.PutOverrideResponse
 import com.backspace.core.model.ReattachAccountResponse
 import com.backspace.core.model.ResetPasswordResponse
 import com.backspace.core.model.Role
 import com.backspace.core.model.SoundboardListResponse
 import com.backspace.core.model.SoundboardSound
+import com.backspace.core.model.SoundboardSpaceSettings
+import com.backspace.core.model.SoundboardSpaceSettingsResponse
 import com.backspace.core.model.Space
 import com.backspace.core.model.SpaceBanItem
 import com.backspace.core.model.SpaceInviteResponse
+import com.backspace.core.model.SpaceJoinRequestItem
+import com.backspace.core.model.SpaceJoinRequestsResponse
 import com.backspace.core.model.StickerItem
 import com.backspace.core.model.StorageCleanupResult
 import com.backspace.core.model.StorageStatsResponse
 import com.backspace.core.model.User
+import com.backspace.core.model.UserMutualsResponse
 import java.net.URLEncoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -1479,6 +1490,566 @@ class BackspaceRestClient(
             }
         }
     }
+
+    // ── Administração de Espaço (Fase 2) ──
+
+    suspend fun updateSpaceFull(
+        instanceUrl: String,
+        token: String,
+        spaceId: String,
+        name: String? = null,
+        description: String? = null,
+        icon: String? = null,
+        banner: String? = null,
+        visibility: String? = null,
+        directoryListed: Boolean? = null,
+        defaultAudioBitrateKbps: Int? = null,
+        maxAudioBitrateKbps: Int? = null,
+        allowMusicMode: Boolean? = null,
+        allowStereoAudio: Boolean? = null,
+    ): Space {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val payload = buildJsonObject {
+            if (name != null) put("name", JsonPrimitive(name))
+            if (description != null) put("description", JsonPrimitive(description))
+            if (icon != null) put("icon", JsonPrimitive(icon))
+            if (banner != null) put("banner", JsonPrimitive(banner))
+            if (visibility != null) put("visibility", JsonPrimitive(visibility))
+            if (directoryListed != null) put("directoryListed", JsonPrimitive(directoryListed))
+            if (defaultAudioBitrateKbps != null) put("audioBitrateKbps", JsonPrimitive(defaultAudioBitrateKbps))
+            if (maxAudioBitrateKbps != null) put("maxAudioBitrateKbps", JsonPrimitive(maxAudioBitrateKbps))
+            if (allowMusicMode != null) put("allowMusicMode", JsonPrimitive(allowMusicMode))
+            if (allowStereoAudio != null) put("allowStereoAudio", JsonPrimitive(allowStereoAudio))
+        }.toString()
+        return executePatch(
+            url = "$base/api/spaces/$spaceId",
+            body = payload,
+            token = token,
+        )
+    }
+
+    suspend fun deleteSpace(
+        instanceUrl: String,
+        token: String,
+        spaceId: String,
+    ) {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        executeDeleteVoid("$base/api/spaces/$spaceId", token = token)
+    }
+
+    suspend fun leaveSpace(
+        instanceUrl: String,
+        token: String,
+        spaceId: String,
+        myUserId: String,
+    ) {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        executeDeleteVoid("$base/api/spaces/$spaceId/members/$myUserId", token = token)
+    }
+
+    suspend fun transferSpaceOwnership(
+        instanceUrl: String,
+        token: String,
+        spaceId: String,
+        newOwnerId: String,
+    ): Space {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val payload = buildJsonObject {
+            put("newOwnerId", JsonPrimitive(newOwnerId))
+        }.toString()
+        return executePatch(
+            url = "$base/api/spaces/$spaceId/transfer-ownership",
+            body = payload,
+            token = token,
+        )
+    }
+
+    suspend fun getSpaceJoinRequests(
+        instanceUrl: String,
+        token: String,
+        spaceId: String,
+    ): List<SpaceJoinRequestItem> {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executeGet<SpaceJoinRequestsResponse>(
+            "$base/api/spaces/$spaceId/join-requests",
+            token = token,
+        ).requests
+    }
+
+    suspend fun handleSpaceJoinRequest(
+        instanceUrl: String,
+        token: String,
+        spaceId: String,
+        requestId: String,
+        action: String,
+    ): SpaceJoinRequestItem {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val payload = buildJsonObject {
+            put("action", JsonPrimitive(action))
+        }.toString()
+        return executePatch(
+            url = "$base/api/spaces/$spaceId/join-requests/$requestId",
+            body = payload,
+            token = token,
+        )
+    }
+
+    // ── Membros & Cargos (Fase 2) ──
+
+    suspend fun updateMemberNickname(
+        instanceUrl: String,
+        token: String,
+        spaceId: String,
+        userId: String,
+        nickname: String?,
+    ): MemberWithUser {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val payload = buildJsonObject {
+            val trimmed = nickname?.trim()
+            if (trimmed.isNullOrEmpty()) {
+                put("nickname", JsonNull)
+            } else {
+                put("nickname", JsonPrimitive(trimmed))
+            }
+        }.toString()
+        return executePatch(
+            url = "$base/api/spaces/$spaceId/members/$userId",
+            body = payload,
+            token = token,
+        )
+    }
+
+    suspend fun assignMemberRole(
+        instanceUrl: String,
+        token: String,
+        spaceId: String,
+        userId: String,
+        roleId: String,
+    ) {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val payload = buildJsonObject {
+            put("roleId", JsonPrimitive(roleId))
+        }.toString()
+        executePostVoid(
+            url = "$base/api/spaces/$spaceId/members/$userId/roles",
+            body = payload,
+            token = token,
+        )
+    }
+
+    suspend fun removeMemberRole(
+        instanceUrl: String,
+        token: String,
+        spaceId: String,
+        userId: String,
+        roleId: String,
+    ) {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        executeDeleteVoid(
+            url = "$base/api/spaces/$spaceId/members/$userId/roles/$roleId",
+            token = token,
+        )
+    }
+
+    suspend fun updateRole(
+        instanceUrl: String,
+        token: String,
+        spaceId: String,
+        roleId: String,
+        name: String? = null,
+        color: String? = null,
+        permissions: String? = null,
+        position: Int? = null,
+        permissionsVersion: String? = null,
+    ): Role {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val payload = buildJsonObject {
+            if (name != null) put("name", JsonPrimitive(name))
+            if (color != null) put("color", JsonPrimitive(color))
+            if (permissions != null) put("permissions", JsonPrimitive(permissions))
+            if (position != null) put("position", JsonPrimitive(position))
+            if (permissionsVersion != null) put("permissionsVersion", JsonPrimitive(permissionsVersion))
+        }.toString()
+        return executePatch(
+            url = "$base/api/spaces/$spaceId/roles/$roleId",
+            body = payload,
+            token = token,
+        )
+    }
+
+    // ── Canais, Categorias, Overrides & Layout (Fase 2) ──
+
+    suspend fun createChannelInCategory(
+        instanceUrl: String,
+        token: String,
+        spaceId: String,
+        name: String,
+        type: String,
+        topic: String? = null,
+        categoryId: String? = null,
+    ): Channel {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val payload = buildJsonObject {
+            put("name", JsonPrimitive(name))
+            put("type", JsonPrimitive(type))
+            if (!topic.isNullOrBlank()) put("topic", JsonPrimitive(topic.trim()))
+            if (!categoryId.isNullOrBlank()) put("categoryId", JsonPrimitive(categoryId))
+        }.toString()
+        return executePost(
+            url = "$base/api/spaces/$spaceId/channels",
+            body = payload,
+            token = token,
+        )
+    }
+
+    suspend fun updateChannelFull(
+        instanceUrl: String,
+        token: String,
+        channelId: String,
+        name: String? = null,
+        topic: String? = null,
+        categoryId: String? = null,
+        defaultAudioBitrateKbps: Int? = null,
+        maxAudioBitrateKbps: Int? = null,
+        allowMusicMode: Boolean? = null,
+        allowStereoAudio: Boolean? = null,
+    ): Channel {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val payload = buildJsonObject {
+            if (name != null) put("name", JsonPrimitive(name))
+            if (topic != null) put("topic", JsonPrimitive(topic))
+            if (categoryId != null) {
+                if (categoryId.isBlank()) {
+                    put("categoryId", JsonNull)
+                } else {
+                    put("categoryId", JsonPrimitive(categoryId))
+                }
+            }
+            if (defaultAudioBitrateKbps != null) put("audioBitrateKbps", JsonPrimitive(defaultAudioBitrateKbps))
+            if (maxAudioBitrateKbps != null) put("maxAudioBitrateKbps", JsonPrimitive(maxAudioBitrateKbps))
+            if (allowMusicMode != null) put("allowMusicMode", JsonPrimitive(allowMusicMode))
+            if (allowStereoAudio != null) put("allowStereoAudio", JsonPrimitive(allowStereoAudio))
+        }.toString()
+        return executePatch(
+            url = "$base/api/channels/$channelId",
+            body = payload,
+            token = token,
+        )
+    }
+
+    suspend fun getChannelOverrides(
+        instanceUrl: String,
+        token: String,
+        channelId: String,
+    ): OverridesResponse {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val raw = executeGetRaw("$base/api/channels/$channelId/overrides", token = token)
+        return decodeOverridesResponse(raw)
+    }
+
+    suspend fun putChannelOverride(
+        instanceUrl: String,
+        token: String,
+        channelId: String,
+        targetType: String,
+        targetId: String,
+        allow: String,
+        deny: String,
+        overrideVersion: String? = null,
+    ): OverridesResponse {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val payload = buildJsonObject {
+            put("targetType", JsonPrimitive(targetType))
+            put("targetId", JsonPrimitive(targetId))
+            put("allow", JsonPrimitive(allow))
+            put("deny", JsonPrimitive(deny))
+            if (!overrideVersion.isNullOrBlank()) put("version", JsonPrimitive(overrideVersion))
+        }.toString()
+        val resp = executePut<PutOverrideResponse>(
+            url = "$base/api/channels/$channelId/overrides",
+            body = payload,
+            token = token,
+        )
+        return OverridesResponse(
+            overrides = listOf(
+                PermissionOverrideItem(
+                    targetType = targetType,
+                    targetId = targetId,
+                    allow = allow,
+                    deny = deny,
+                    version = resp.version,
+                ),
+            ),
+            overrideVersion = resp.version,
+        )
+    }
+
+    suspend fun deleteChannelOverride(
+        instanceUrl: String,
+        token: String,
+        channelId: String,
+        targetType: String,
+        targetId: String,
+        overrideVersion: String? = null,
+    ) {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val query = if (!overrideVersion.isNullOrBlank()) {
+            "?version=${URLEncoder.encode(overrideVersion, "UTF-8")}"
+        } else {
+            ""
+        }
+        executeDeleteVoid(
+            url = "$base/api/channels/$channelId/overrides/$targetType/$targetId$query",
+            token = token,
+        )
+    }
+
+    suspend fun updateCategory(
+        instanceUrl: String,
+        token: String,
+        categoryId: String,
+        name: String? = null,
+        defaultAudioBitrateKbps: Int? = null,
+        maxAudioBitrateKbps: Int? = null,
+        allowMusicMode: Boolean? = null,
+        allowStereoAudio: Boolean? = null,
+    ): ChannelCategory {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val payload = buildJsonObject {
+            if (name != null) put("name", JsonPrimitive(name))
+            if (defaultAudioBitrateKbps != null) put("audioBitrateKbps", JsonPrimitive(defaultAudioBitrateKbps))
+            if (maxAudioBitrateKbps != null) put("maxAudioBitrateKbps", JsonPrimitive(maxAudioBitrateKbps))
+            if (allowMusicMode != null) put("allowMusicMode", JsonPrimitive(allowMusicMode))
+            if (allowStereoAudio != null) put("allowStereoAudio", JsonPrimitive(allowStereoAudio))
+        }.toString()
+        return executePatch(
+            url = "$base/api/categories/$categoryId",
+            body = payload,
+            token = token,
+        )
+    }
+
+    suspend fun deleteCategory(
+        instanceUrl: String,
+        token: String,
+        categoryId: String,
+    ) {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        executeDeleteVoid("$base/api/categories/$categoryId", token = token)
+    }
+
+    suspend fun getCategoryOverrides(
+        instanceUrl: String,
+        token: String,
+        categoryId: String,
+    ): OverridesResponse {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val raw = executeGetRaw("$base/api/categories/$categoryId/overrides", token = token)
+        return decodeOverridesResponse(raw)
+    }
+
+    suspend fun putCategoryOverride(
+        instanceUrl: String,
+        token: String,
+        categoryId: String,
+        targetType: String,
+        targetId: String,
+        allow: String,
+        deny: String,
+        overrideVersion: String? = null,
+    ): OverridesResponse {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val payload = buildJsonObject {
+            put("targetType", JsonPrimitive(targetType))
+            put("targetId", JsonPrimitive(targetId))
+            put("allow", JsonPrimitive(allow))
+            put("deny", JsonPrimitive(deny))
+            if (!overrideVersion.isNullOrBlank()) put("version", JsonPrimitive(overrideVersion))
+        }.toString()
+        val resp = executePut<PutOverrideResponse>(
+            url = "$base/api/categories/$categoryId/overrides",
+            body = payload,
+            token = token,
+        )
+        return OverridesResponse(
+            overrides = listOf(
+                PermissionOverrideItem(
+                    targetType = targetType,
+                    targetId = targetId,
+                    allow = allow,
+                    deny = deny,
+                    version = resp.version,
+                ),
+            ),
+            overrideVersion = resp.version,
+        )
+    }
+
+    suspend fun deleteCategoryOverride(
+        instanceUrl: String,
+        token: String,
+        categoryId: String,
+        targetType: String,
+        targetId: String,
+        overrideVersion: String? = null,
+    ) {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val query = if (!overrideVersion.isNullOrBlank()) {
+            "?version=${URLEncoder.encode(overrideVersion, "UTF-8")}"
+        } else {
+            ""
+        }
+        executeDeleteVoid(
+            url = "$base/api/categories/$categoryId/overrides/$targetType/$targetId$query",
+            token = token,
+        )
+    }
+
+    suspend fun updateChannelLayout(
+        instanceUrl: String,
+        token: String,
+        spaceId: String,
+        channels: List<ChannelLayoutItem>,
+        categories: List<CategoryLayoutItem>,
+    ) {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val payload = buildJsonObject {
+            put(
+                "channels",
+                buildJsonArray {
+                    channels.forEach { ch ->
+                        add(
+                            buildJsonObject {
+                                put("id", JsonPrimitive(ch.id))
+                                put("position", JsonPrimitive(ch.position))
+                                if (ch.categoryId == null) {
+                                    put("categoryId", JsonNull)
+                                } else {
+                                    put("categoryId", JsonPrimitive(ch.categoryId))
+                                }
+                            },
+                        )
+                    }
+                },
+            )
+            put(
+                "categories",
+                buildJsonArray {
+                    categories.forEach { cat ->
+                        add(
+                            buildJsonObject {
+                                put("id", JsonPrimitive(cat.id))
+                                put("position", JsonPrimitive(cat.position))
+                                if (cat.parentId != null) {
+                                    put("parentId", JsonPrimitive(cat.parentId))
+                                }
+                            },
+                        )
+                    }
+                },
+            )
+        }.toString()
+        executePatchVoid(
+            url = "$base/api/spaces/$spaceId/channel-layout",
+            body = payload,
+            token = token,
+        )
+    }
+
+    // ── Convite por DM, Soundboard do Espaço e Perfil de Usuário (Fase 2) ──
+
+    suspend fun sendSpaceInviteDm(
+        instanceUrl: String,
+        token: String,
+        targetUserId: String,
+        spaceId: String,
+        inviteCode: String,
+    ) {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val payload = buildJsonObject {
+            put("spaceId", JsonPrimitive(spaceId))
+            put("inviteCode", JsonPrimitive(inviteCode))
+            put(
+                "target",
+                buildJsonObject {
+                    put("userId", JsonPrimitive(targetUserId))
+                },
+            )
+        }.toString()
+        executePostVoid(
+            url = "$base/api/dm/space-invite",
+            body = payload,
+            token = token,
+        )
+    }
+
+    suspend fun updateSoundboardSpaceSettings(
+        instanceUrl: String,
+        token: String,
+        spaceId: String,
+        enabled: Boolean,
+        allowInstanceSounds: Boolean,
+        maxConcurrent: Int? = null,
+    ): SoundboardSpaceSettings {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        val payload = buildJsonObject {
+            put("spaceId", JsonPrimitive(spaceId))
+            put("soundboardEnabled", JsonPrimitive(enabled))
+            put("allowInstanceSounds", JsonPrimitive(allowInstanceSounds))
+            if (maxConcurrent != null) {
+                put("maxConcurrentSounds", JsonPrimitive(maxConcurrent))
+            } else {
+                put("maxConcurrentSounds", JsonNull)
+            }
+        }.toString()
+        return executePut<SoundboardSpaceSettingsResponse>(
+            url = "$base/api/soundboard/space-settings",
+            body = payload,
+            token = token,
+        ).spaceSettings
+    }
+
+    suspend fun getUserProfile(
+        instanceUrl: String,
+        token: String,
+        userId: String,
+    ): User {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executeGet("$base/api/users/$userId", token = token)
+    }
+
+    suspend fun getUserMutuals(
+        instanceUrl: String,
+        token: String,
+        userId: String,
+    ): UserMutualsResponse {
+        val base = SecureSessionStorage.normalizeInstanceUrl(instanceUrl)
+        return executeGet("$base/api/users/$userId/mutuals", token = token)
+    }
+
+    private fun decodeOverridesResponse(raw: String): OverridesResponse {
+        val trimmed = raw.trimStart()
+        return if (trimmed.startsWith("[")) {
+            val list = json.decodeFromString<List<PermissionOverrideItem>>(trimmed)
+            OverridesResponse(
+                overrides = list,
+                overrideVersion = list.firstOrNull()?.version,
+            )
+        } else {
+            json.decodeFromString<OverridesResponse>(trimmed)
+        }
+    }
+
+    private suspend fun executePatchVoid(url: String, body: String, token: String?) =
+        withContext(Dispatchers.IO) {
+            val reqBuilder = Request.Builder()
+                .url(url)
+                .patch(body.toRequestBody(jsonMediaType))
+            if (!token.isNullOrBlank()) {
+                reqBuilder.header("Authorization", "Bearer $token")
+            }
+            executeVoid(reqBuilder.build())
+        }
 
     private suspend inline fun <reified T> executePatch(url: String, body: String, token: String?): T =
         withContext(Dispatchers.IO) {

@@ -23,9 +23,9 @@
 - [x] Corrigir bug do índice da aba Instância (`selectedTab == 1`), barra compacta global de voz (`GlobalVoiceMiniBar`), scroll + olho de senha em `AuthScreen`, fix de auto-scroll no Chat, fix de subcategorias aninhadas e diálogos de confirmação em ações destrutivas.
 
 ### Fase 2 (`v0.15.0`) — Administração Completa de Espaços, Canais, Categorias & 22 Permissões
-- [ ] Expandir `PermissionBits` para todos os 22 bits oficiais + cálculo efetivo + `held-bits`.
-- [ ] Tela completa de **Configurações do Espaço** (Visão Geral com ícone/banner/transferir posse/excluir, Descoberta + solicitações de entrada, Membros + apelido + cargos, Cargos + matriz 22 bits + reordenação, Áudio Opus, Soundboard do Espaço, Banimentos, Convites diretos por DM).
-- [ ] **Configurações de Canal & Categoria** (tópico, privacidade, Opus, overrides tri-estado por cargo/membro) + reordenação de canais/categorias + fix de subcategorias aninhadas.
+- [x] Expandir `PermissionBits` para todos os 23 bits oficiais + cálculo efetivo + `held-bits`.
+- [x] Tela completa de **Configurações do Espaço** (Visão Geral com ícone/banner/transferir posse/excluir/sair, Descoberta + solicitações de entrada, Membros + apelido + cargos, Cargos + matriz 23 bits + reordenação, Áudio Opus, Soundboard do Espaço, Banimentos, Convites diretos por DM).
+- [x] **Configurações de Canal & Categoria** (tópico, privacidade, Opus, overrides tri-estado por cargo/membro) + criação em categoria + reordenação de canais/categorias + fixes de `BackHandler`, alinhamento de insets e perfil clicável no Chat/DMs.
 
 ### Fase 3 (`v0.16.0`) — Pastas de Espaços, Notificações & Explorar Completo
 - [ ] **Pastas de Espaços (`SpaceFolder`)** sincronizadas com o servidor (`space-layout`) + indicadores de não lidas em canais e categorias recolhidas.

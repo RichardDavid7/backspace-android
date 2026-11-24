@@ -96,11 +96,19 @@ data class Space(
     val id: String,
     val name: String,
     val icon: String? = null,
+    val banner: String? = null,
+    val accentColor: String? = null,
+    val avatarColor: String? = null,
     val description: String? = null,
+    val visibility: String = "private",
+    val directoryListed: Boolean = false,
     val ownerId: String = "",
+    val ownerTitle: String? = null,
+    val inviteCode: String? = null,
     val channels: List<Channel> = emptyList(),
     val categories: List<ChannelCategory> = emptyList(),
     val members: List<MemberWithUser> = emptyList(),
+    val roles: List<Role> = emptyList(),
     val myPermissions: String? = null,
     // Optional Opus overrides
     val audioBitrateKbps: Int? = null,
@@ -109,6 +117,7 @@ data class Space(
     val allowStereoAudio: Boolean? = null,
 ) {
     fun iconUrl(instanceUrl: String): String? = UploadUrlResolver.resolve(instanceUrl, icon)
+    fun bannerUrl(instanceUrl: String): String? = UploadUrlResolver.resolve(instanceUrl, banner)
 }
 
 @Serializable
@@ -119,6 +128,7 @@ data class ChannelCategory(
     val name: String,
     val position: Int = 0,
     val isPrivate: Boolean = false,
+    val overrideVersion: String? = null,
     // Optional Opus overrides
     val audioBitrateKbps: Int? = null,
     val maxAudioBitrateKbps: Int? = null,
@@ -136,6 +146,8 @@ data class Channel(
     val position: Int = 0,
     val topic: String? = null,
     val isPrivate: Boolean = false,
+    val overrideVersion: String? = null,
+    val myPermissions: String? = null,
     // Optional Opus overrides
     val audioBitrateKbps: Int? = null,
     val maxAudioBitrateKbps: Int? = null,
@@ -152,13 +164,17 @@ data class Role(
     val name: String = "",
     val color: String = "",
     val position: Int = 0,
+    val permissions: String = "0",
+    val permissionsVersion: String? = null,
     val isEveryone: Boolean = false,
+    val isDefault: Boolean = false,
 )
 
 @Serializable
 data class MemberWithUser(
     val userId: String,
     val nickname: String? = null,
+    val joinedAt: Long? = null,
     val user: User? = null,
     val roles: List<Role> = emptyList(),
 ) {

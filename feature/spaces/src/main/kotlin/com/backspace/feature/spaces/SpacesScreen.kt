@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -121,7 +122,9 @@ fun SpacesScreen(
     var showSpaceAdminDialog by remember { mutableStateOf(false) }
     var showAddOrExploreDialog by remember { mutableStateOf(false) }
     var editingChannel by remember { mutableStateOf<Channel?>(null) }
-    var channelPendingDelete by remember { mutableStateOf<Channel?>(null) }
+    var editingCategory by remember { mutableStateOf<ChannelCategory?>(null) }
+    var showCreateChannelOrCategory by remember { mutableStateOf(false) }
+    var showReorderStructure by remember { mutableStateOf(false) }
     var memberPendingKick by remember { mutableStateOf<MemberWithUser?>(null) }
     var memberPendingBan by remember { mutableStateOf<MemberWithUser?>(null) }
     val collapsedCategories = remember { mutableStateMapOf<String, Boolean>() }
@@ -132,6 +135,72 @@ fun SpacesScreen(
         PermissionBits.hasPermission(selectedSpace.myPermissions, PermissionBits.ADMINISTRATOR) ||
             selectedSpace.ownerId == snapshot.currentUser?.id
         )
+
+    // Telas dedicadas em tela cheia (Fase 2) — substituindo diálogos apertados
+    if (showSpaceAdminDialog && selectedSpace != null) {
+        Box(modifier = modifier.fillMaxSize()) {
+            SpaceSettingsHostScreen(
+                instanceUrl = instanceUrl,
+                token = jwtToken,
+                space = selectedSpace,
+                currentUserId = snapshot.currentUser?.id.orEmpty(),
+                restClient = restClient,
+                onSpaceUpdated = {
+                    scope.launch { runCatching { wsClient.refreshSpaceDetail(selectedSpace.id) } }
+                },
+                onSpaceLeftOrDeleted = {
+                    showSpaceAdminDialog = false
+                    selectedSpaceId = snapshot.spaces.firstOrNull { it.id != selectedSpace.id }?.id
+                },
+                onBack = { showSpaceAdminDialog = false },
+            )
+        }
+        return
+    }
+
+    if (editingChannel != null && selectedSpace != null) {
+        val targetChannel = editingChannel!!
+        Box(modifier = modifier.fillMaxSize()) {
+            ChannelSettingsHostScreen(
+                instanceUrl = instanceUrl,
+                token = jwtToken,
+                space = selectedSpace,
+                channel = targetChannel,
+                restClient = restClient,
+                onChanged = {
+                    scope.launch { runCatching { wsClient.refreshSpaceDetail(selectedSpace.id) } }
+                },
+                onDeleted = {
+                    editingChannel = null
+                    scope.launch { runCatching { wsClient.refreshSpaceDetail(selectedSpace.id) } }
+                },
+                onBack = { editingChannel = null },
+            )
+        }
+        return
+    }
+
+    if (editingCategory != null && selectedSpace != null) {
+        val targetCategory = editingCategory!!
+        Box(modifier = modifier.fillMaxSize()) {
+            CategorySettingsHostScreen(
+                instanceUrl = instanceUrl,
+                token = jwtToken,
+                space = selectedSpace,
+                category = targetCategory,
+                restClient = restClient,
+                onChanged = {
+                    scope.launch { runCatching { wsClient.refreshSpaceDetail(selectedSpace.id) } }
+                },
+                onDeleted = {
+                    editingCategory = null
+                    scope.launch { runCatching { wsClient.refreshSpaceDetail(selectedSpace.id) } }
+                },
+                onBack = { editingCategory = null },
+            )
+        }
+        return
+    }
 
     if (showStatusDialog) {
         StatusPickerDialog(
@@ -271,92 +340,31 @@ fun SpacesScreen(
         )
     }
 
-    editingChannel?.let { ch ->
-        var editedName by remember(ch.id) { mutableStateOf(ch.name) }
-        AlertDialog(
-            onDismissRequest = { editingChannel = null },
-            containerColor = colors.bgChannel,
-            title = { Text("Editar Canal", color = colors.textPrimary) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = editedName,
-                        onValueChange = { editedName = it },
-                        label = { Text("Nome do canal") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    OutlinedButton(
-                        onClick = {
-                            editingChannel = null
-                            channelPendingDelete = ch
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text("Apagar canal", color = colors.accentPeach)
-                    }
-                }
+    if (showCreateChannelOrCategory && selectedSpace != null) {
+        CreateChannelOrCategoryDialog(
+            instanceUrl = instanceUrl,
+            token = jwtToken,
+            space = selectedSpace,
+            restClient = restClient,
+            onCreated = {
+                showCreateChannelOrCategory = false
+                scope.launch { runCatching { wsClient.refreshSpaceDetail(selectedSpace.id) } }
             },
-            confirmButton = {
-                TextButton(
-                    enabled = editedName.isNotBlank(),
-                    onClick = {
-                        val sid = selectedSpace?.id ?: return@TextButton
-                        val nextName = editedName.trim()
-                        editingChannel = null
-                        scope.launch {
-                            runCatching {
-                                restClient.renameChannel(instanceUrl, jwtToken, ch.id, nextName)
-                                wsClient.refreshSpaceDetail(sid)
-                            }
-                        }
-                    },
-                ) {
-                    Text(saveLabel, color = colors.accentPrimary)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { editingChannel = null }) {
-                    Text(cancelLabel, color = colors.textSecondary)
-                }
-            },
+            onDismiss = { showCreateChannelOrCategory = false },
         )
     }
 
-    channelPendingDelete?.let { ch ->
-        AlertDialog(
-            onDismissRequest = { channelPendingDelete = null },
-            containerColor = colors.bgChannel,
-            title = { Text("Apagar canal?", color = colors.textPrimary) },
-            text = {
-                Text(
-                    text = "Tem certeza que deseja apagar o canal \"${ch.name}\"? Esta ação não pode ser desfeita.",
-                    color = colors.textSecondary,
-                )
+    if (showReorderStructure && selectedSpace != null) {
+        ReorderSpaceStructureDialog(
+            instanceUrl = instanceUrl,
+            token = jwtToken,
+            space = selectedSpace,
+            restClient = restClient,
+            onSaved = {
+                showReorderStructure = false
+                scope.launch { runCatching { wsClient.refreshSpaceDetail(selectedSpace.id) } }
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val sid = selectedSpace?.id
-                        channelPendingDelete = null
-                        if (sid != null) {
-                            scope.launch {
-                                runCatching {
-                                    restClient.deleteChannel(instanceUrl, jwtToken, ch.id)
-                                    wsClient.refreshSpaceDetail(sid)
-                                }
-                            }
-                        }
-                    },
-                ) {
-                    Text("Apagar", color = colors.accentPeach)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { channelPendingDelete = null }) {
-                    Text(cancelLabel, color = colors.textSecondary)
-                }
-            },
+            onDismiss = { showReorderStructure = false },
         )
     }
 
@@ -371,29 +379,6 @@ fun SpacesScreen(
                 showAddOrExploreDialog = false
             },
             onDismiss = { showAddOrExploreDialog = false },
-        )
-    }
-
-    if (showSpaceAdminDialog && selectedSpace != null) {
-        SpaceAdminDialog(
-            instanceUrl = instanceUrl,
-            jwtToken = jwtToken,
-            restClient = restClient,
-            wsClient = wsClient,
-            space = selectedSpace,
-            title = spaceAdminTitle,
-            saveLabel = saveLabel,
-            cancelLabel = cancelLabel,
-            onDismiss = { showSpaceAdminDialog = false },
-            onSave = { req ->
-                showSpaceAdminDialog = false
-                scope.launch {
-                    runCatching {
-                        restClient.updateSpaceSettings(instanceUrl, jwtToken, selectedSpace.id, req)
-                        wsClient.refreshSpaceDetail(selectedSpace.id)
-                    }
-                }
-            },
         )
     }
 
@@ -540,6 +525,27 @@ fun SpacesScreen(
 
         Spacer(Modifier.height(10.dp))
 
+        if (selectedSpace != null && isSpaceAdmin) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(
+                    onClick = { showCreateChannelOrCategory = true },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("+ Canal / Categoria", maxLines = 1)
+                }
+                OutlinedButton(
+                    onClick = { showReorderStructure = true },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Reordenar", maxLines = 1)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+
         if (selectedSpace != null) {
             val canConnect = PermissionBits.hasPermission(selectedSpace.myPermissions, PermissionBits.CONNECT)
             val treeItems = remember(selectedSpace) { ChannelTreeBuilder.build(selectedSpace) }
@@ -572,7 +578,10 @@ fun SpacesScreen(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { collapsedCategories[item.category.id] = !collapsed }
+                                    .combinedClickable(
+                                        onClick = { collapsedCategories[item.category.id] = !collapsed },
+                                        onLongClick = { if (isSpaceAdmin) editingCategory = item.category },
+                                    )
                                     .padding(start = indent, top = 8.dp, bottom = 2.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
