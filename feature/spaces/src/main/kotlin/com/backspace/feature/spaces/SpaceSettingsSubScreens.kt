@@ -954,9 +954,10 @@ internal fun SpaceDiscoverySubScreen(
                                         }
                                     }
                                 }
-                                if (!req.message.isNullOrBlank()) {
+                                val reqMessage = req.message
+                                if (!reqMessage.isNullOrBlank()) {
                                     Text(
-                                        text = req.message,
+                                        text = reqMessage,
                                         style = MaterialTheme.typography.bodySmall,
                                         color = colors.textSecondary,
                                     )
